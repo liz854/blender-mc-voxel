@@ -1,0 +1,10 @@
+# 统一用 LF，Windows 上也不会把整仓库变成 CRLF
+text=auto eol=lf
+
+# 二进制，别做行尾转换
+*.blend binary
+*.png binary
+*.litematic binary
+*.schem binary
+*.nbt binary
+*.zip binary

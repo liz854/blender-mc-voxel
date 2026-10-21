@@ -1,0 +1,13 @@
+schema_version = "1.0.0"
+id = "mc_voxel_export"
+version = "0.1.0"
+name = "MC Voxel Export"
+tagline = "把 Blender 网格体素化成 Minecraft 投影"
+maintainer = "Liz"
+type = "add-on"
+blender_version_min = "5.0.0"
+license = ["SPDX:GPL-3.0-or-later"]
+tags = ["Mesh", "Import-Export"]
+
+[permissions]
+files = "读取客户端 jar 与写出投影文件"
