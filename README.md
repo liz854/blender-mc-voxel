@@ -39,19 +39,29 @@
 |---|---|---|
 | **Blender** | **5.2.2 LTS**（Steam 版，build 2026-09-15） | 面板操作、`tools/blender_m1.py` 真机 57 项全部在这个版本跑过 |
 | **Minecraft** | **26.3** | 导出的 `.litematic` 在游戏里 Load 成功，形状 / 空心 / 开口 / 分层都核对过 |
-| **模组加载器** | **Fabric**（本机 0.20.1） | 只在这个加载器上试过；Forge / NeoForge 没测，Litematica 本身是通用的，理论上不影响 |
+| **模组加载器** | **Fabric**（本机 0.20.1） | 只影响 Litematica 能不能装，**与导出的文件无关**；Forge / NeoForge 一样能用 |
 | **Litematica** | **0.29.1** | Modrinth 上 **0.29.x 才是 26.3 的构建**，0.28 及以下不支持 26.3 |
 | **客户端 jar** | 26.3 官方 jar | 300 种方块色和世界限高数值都从这里读 |
 
-### 其他版本没做测试
+### 换版本会怎样（更高 / 更低不一样）
 
-**上面那组以外的版本都可能出问题**，尤其是这三点：
+**版本更高基本没事，版本更低才容易出事。** 不是猜的：Litematica 读取时的判断是
+`version >= 1 && version <= SCHEMATIC_VERSION`，当前源码里 `SCHEMATIC_VERSION = 7`，
+`SCHEMATIC_VERSION_SUB = 1`——我们写出的正是 `7 / 1`。所以对更新版的 Litematica 来说，这个文件永远是"旧格式但合法"。
 
-- **MC 版本不是 26.3**：`.litematic` 的 `Version = 7 / SubVersion = 1` 是照 26.3 真机样本钉下来的，老版本 Litematica 读不了这个格式；`DataVersion` 填错的话 Load 时会警告，或者部分方块对不上（面板「游戏版本」里有一张常见版本的表，但只有 26.3 是实测过的）
-- **Litematica 版本低于 0.29**：对 26.3 新增/重命名的方块支持不全，可能出现「未知方块」
-- **Blender 版本高于或低于 5.2.2**：`blender_manifest.toml` 最低要求 **5.0**（更低的装都装不上）；5.0–5.2 之间理论上都行，但没实测。真遇到问题请先报 Blender 版本号
+| 组件 | 换成**更高**版本 | 换成**更低**版本 |
+|---|---|---|
+| **Litematica** | ✅ 能读。新版的 `SCHEMATIC_VERSION` 只会 ≥ 7，向后兼容；跨版本的方块名/状态由 `convertBlockStatePalette_to_1_20_5` + `postProcessContainerIfNeeded` 自动修正 | ❌ **读不了**。`SCHEMATIC_VERSION` 低于 7 的旧版会判定"文件版本太新" |
+| **Minecraft** | ✅ 一般能读。文件里的 `MinecraftDataVersion` 交给 DataFixer 升级，被删除或改名的方块可能丢几个 | ⚠️ 不一定。老版本没见过的方块会变成未知方块 |
+| **Blender** | ✅ 能装。manifest 只写了 `blender_version_min = 5.0.0`，**没有上限**；扩展 API 向后兼容 | ❌ 装不上（低于 5.0 直接被 manifest 拦掉） |
+| **Fabric / Forge / NeoForge** | ✅ **完全无关**。导出的是磁盘上的文件，跟模组加载器版本没有任何关系 | 同左 |
 
-要换版本试的话，最省事的顺序是：先用 `examples/05_bugtest.blend` 导一遍、进游戏 Load 看看——那 9 个块专门用来暴露版本相关的格式问题。
+**唯一需要小心的是 MC 跨大版本的方块改名**：`MinecraftDataVersion` 填错，DataFixer 就会走错修正表。换 MC
+版本时面板「游戏版本」要选对，或者干脆把新版客户端 jar 填上——DataVersion 直接从 jar 的 `version.json` 读，不用手填。
+
+要试别的版本，建议先导一遍 `examples/05_bugtest.blend` 再进游戏 Load：那 9 个块能最快暴露格式问题。
+
+上面「推荐版本」那张表是实际完整验收过的组合，其他组合没跑全量测试。
 
 ### 方式一：装发布包（普通用户）
 
