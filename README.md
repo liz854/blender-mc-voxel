@@ -28,20 +28,22 @@
 
 | 项 | 要求 |
 |---|---|
-| Blender | **5.0 或更高**（`blender_manifest.toml` 里 `blender_version_min = 5.0.0`），推荐 **5.2.2 LTS** |
+| Blender | **5.2.2 LTS 或更高**（`blender_manifest.toml` 里 `blender_version_min = 5.0.0`，低于 5.0 装不上） |
 | Python | 不用自己装，Blender 自带；核心算法只依赖 numpy（Blender 内置） |
 | 客户端 jar | 可选，但**强烈建议**：有它才有真实 300 色配色；没有会退到内置 96 色，颜色明显偏 |
-| 游戏侧 | Minecraft + [Litematica](https://modrinth.com/mod/litematica)（Load `.litematic` 用）；推荐 MC 26.3 + Litematica 0.29.1 |
+| 游戏侧 | Minecraft + [Litematica](https://modrinth.com/mod/litematica)（Load `.litematic` 用）；推荐 MC 26.3 + **Litematica 0.29.1 或更高** |
 
-### 推荐版本（只在这个组合上验证过）
+### 推荐版本（这个组合上做过完整验收）
 
 | 组件 | 版本 | 验证到什么程度 |
 |---|---|---|
-| **Blender** | **5.2.2 LTS**（Steam 版，build 2026-09-15） | 面板操作、`tools/blender_m1.py` 真机 57 项全部在这个版本跑过 |
-| **Minecraft** | **26.3** | 导出的 `.litematic` 在游戏里 Load 成功，形状 / 空心 / 开口 / 分层都核对过 |
-| **模组加载器** | **Fabric**（本机 0.20.1） | 只影响 Litematica 能不能装，**与导出的文件无关**；Forge / NeoForge 一样能用 |
-| **Litematica** | **0.29.1** | Modrinth 上 **0.29.x 才是 26.3 的构建**，0.28 及以下不支持 26.3 |
-| **客户端 jar** | 26.3 官方 jar | 300 种方块色和世界限高数值都从这里读 |
+| **Blender** | **5.2.2 LTS 或更高** | 面板操作、`tools/blender_m1.py` 真机 57 项在 5.2.2 LTS 上跑过；更高版本能装、API 向后兼容 |
+| **Minecraft** | **26.3**（**必须与 jar 对应**，不能"更高就行"） | 导出的 `.litematic` 在游戏里 Load 成功，形状 / 空心 / 开口 / 分层都核对过 |
+| **模组加载器** | **Fabric 0.20.1 或更高** | 只影响 Litematica 能不能装，**与导出的文件无关**；Forge / NeoForge 一样能用 |
+| **Litematica** | **0.29.1 或更高** | 更高版本一定能读（读取上限是 `SCHEMATIC_VERSION`，只会越来越大）；低于 0.29 读不了，见下 |
+| **客户端 jar** | **26.3 官方 jar**（**必须和游戏版本一致**） | 300 种方块色和世界限高数值都从这里读 |
+
+只有 **MC 版本和客户端 jar** 是"精确对应"关系，其余一律"这个版本或更高都行"。原因见下一节。
 
 ### 换版本会怎样（更高 / 更低不一样）
 
