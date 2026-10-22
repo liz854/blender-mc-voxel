@@ -28,10 +28,30 @@
 
 | 项 | 要求 |
 |---|---|
-| Blender | **5.0 或更高**（`blender_manifest.toml` 里 `blender_version_min = 5.0.0`），实测在 **5.2.2 LTS** |
+| Blender | **5.0 或更高**（`blender_manifest.toml` 里 `blender_version_min = 5.0.0`），推荐 **5.2.2 LTS** |
 | Python | 不用自己装，Blender 自带；核心算法只依赖 numpy（Blender 内置） |
 | 客户端 jar | 可选，但**强烈建议**：有它才有真实 300 色配色；没有会退到内置 96 色，颜色明显偏 |
-| 游戏侧 | Minecraft + [Litematica](https://modrinth.com/mod/litematica)（Load `.litematic` 用）；本机验证的是 MC 26.3 + Fabric + Litematica 0.29.1 |
+| 游戏侧 | Minecraft + [Litematica](https://modrinth.com/mod/litematica)（Load `.litematic` 用）；推荐 MC 26.3 + Litematica 0.29.1 |
+
+### 推荐版本（只在这个组合上验证过）
+
+| 组件 | 版本 | 验证到什么程度 |
+|---|---|---|
+| **Blender** | **5.2.2 LTS**（Steam 版，build 2026-09-15） | 面板操作、`tools/blender_m1.py` 真机 57 项全部在这个版本跑过 |
+| **Minecraft** | **26.3** | 导出的 `.litematic` 在游戏里 Load 成功，形状 / 空心 / 开口 / 分层都核对过 |
+| **模组加载器** | **Fabric**（本机 0.20.1） | 只在这个加载器上试过；Forge / NeoForge 没测，Litematica 本身是通用的，理论上不影响 |
+| **Litematica** | **0.29.1** | Modrinth 上 **0.29.x 才是 26.3 的构建**，0.28 及以下不支持 26.3 |
+| **客户端 jar** | 26.3 官方 jar | 300 种方块色和世界限高数值都从这里读 |
+
+### 其他版本没做测试
+
+**上面那组以外的版本都可能出问题**，尤其是这三点：
+
+- **MC 版本不是 26.3**：`.litematic` 的 `Version = 7 / SubVersion = 1` 是照 26.3 真机样本钉下来的，老版本 Litematica 读不了这个格式；`DataVersion` 填错的话 Load 时会警告，或者部分方块对不上（面板「游戏版本」里有一张常见版本的表，但只有 26.3 是实测过的）
+- **Litematica 版本低于 0.29**：对 26.3 新增/重命名的方块支持不全，可能出现「未知方块」
+- **Blender 版本高于或低于 5.2.2**：`blender_manifest.toml` 最低要求 **5.0**（更低的装都装不上）；5.0–5.2 之间理论上都行，但没实测。真遇到问题请先报 Blender 版本号
+
+要换版本试的话，最省事的顺序是：先用 `examples/05_bugtest.blend` 导一遍、进游戏 Load 看看——那 9 个块专门用来暴露版本相关的格式问题。
 
 ### 方式一：装发布包（普通用户）
 
