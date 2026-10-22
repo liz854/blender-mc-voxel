@@ -473,6 +473,17 @@ tools/
 
 ## 许可证
 
-GPL-3.0-or-later，见 [LICENSE](LICENSE)。核心原因是 Blender 扩展体系本身要求 GPL 兼容，另外这个项目也是从 Litematica 的源码里核对格式细节才写对的。
+**GPL-3.0-or-later**，全文见 [LICENSE](LICENSE)。
+
+不是随手挑的。Blender 官方文档 [Extension Licenses](https://docs.blender.org/manual/en/latest/advanced/extensions/licenses.html) 写得很明确：
+
+> The Blender Extensions Platform only supports free and open source extensions compliant with Blender's license:
+> - For add-ons, the required license is GNU General Public License v3.0 or later.
+
+原因是插件要调用 Blender 的 Python API（`bpy`），而 `bpy` 本身属于 Blender 的 GPL 代码，按官方态度扩展就被 GPL 覆盖。想用 MIT 的只能是独立工具（不 import bpy），不能做成 Blender 扩展。
+
+- `LICENSE` 是 FSF 发布的 GPL-3.0 原文，未做任何修改
+- `or-later` 是标准写法：将来 GPL-4 发布后可以按新版分发
+- 与 Litematica 无关。它是 LGPL-3.0，本项目也没抄它的代码，只是照它的 Java 源码核对了 `.litematic` 的文件格式规则
 
 代码可以随意改、随意分发，但分发时要同样开源。有问题直接开 Issue。
