@@ -33,45 +33,24 @@
 | 客户端 jar | 可选，但**强烈建议**：有它才有真实 300 色配色；没有会退到内置 96 色，颜色明显偏 |
 | 游戏侧 | Minecraft + [Litematica](https://modrinth.com/mod/litematica)（Load `.litematic` 用）；推荐 MC 26.3 + **Litematica 0.29.1 或更高** |
 
-### 推荐版本（这个组合上做过完整验收）
+### 推荐版本
 
 | 组件 | 版本 | 验证到什么程度 |
 |---|---|---|
-| **Blender** | **5.2.2 LTS 或更高** | 面板操作、`tools/blender_m1.py` 真机 57 项在 5.2.2 LTS 上跑过；更高版本能装、API 向后兼容 |
-| **Minecraft** | **26.3**（**必须与 jar 对应**，不能"更高就行"） | 导出的 `.litematic` 在游戏里 Load 成功，形状 / 空心 / 开口 / 分层都核对过 |
-| **模组加载器** | **Fabric 0.20.1 或更高** | 只影响 Litematica 能不能装，**与导出的文件无关**；Forge / NeoForge 一样能用 |
-| **Litematica** | **0.29.1 或更高** | 更高版本一定能读（读取上限是 `SCHEMATIC_VERSION`，只会越来越大）；低于 0.29 读不了，见下 |
-| **客户端 jar** | **26.3 官方 jar**（**必须和游戏版本一致**） | 300 种方块色和世界限高数值都从这里读 |
+| **Blender** | **5.2.2 LTS 或更高** | 面板操作与 `tools/blender_m1.py` 真机 57 项均在 5.2.2 LTS 上完成；更高版本可正常安装 |
+| **Minecraft** | **26.3**（须与客户端 jar 对应） | 导出的 `.litematic` 在游戏内 Load 成功，形状 / 空心 / 开口 / 分层均已核对 |
+| **模组加载器** | **Fabric 0.20.1 或更高** | 仅影响 Litematica 的安装，与导出文件无关；Forge / NeoForge 同样适用 |
+| **Litematica** | **0.29.1 或更高** | 读取上限为 `SCHEMATIC_VERSION = 7`，更高版本均向后兼容；低于 0.29 无法读取 |
 
-只有 **MC 版本和客户端 jar** 是"精确对应"关系，其余一律"这个版本或更高都行"。原因见下一节。
+除 MC 版本需与客户端 jar 对应外，其余组件均为「该版本或更高即可」。
 
-### 换版本会怎样（更高 / 更低不一样）
-
-**版本更高基本没事，版本更低才容易出事。** 不是猜的：Litematica 读取时的判断是
-`version >= 1 && version <= SCHEMATIC_VERSION`，当前源码里 `SCHEMATIC_VERSION = 7`，
-`SCHEMATIC_VERSION_SUB = 1`——我们写出的正是 `7 / 1`。所以对更新版的 Litematica 来说，这个文件永远是"旧格式但合法"。
-
-| 组件 | 换成**更高**版本 | 换成**更低**版本 |
-|---|---|---|
-| **Litematica** | ✅ 能读。新版的 `SCHEMATIC_VERSION` 只会 ≥ 7，向后兼容；跨版本的方块名/状态由 `convertBlockStatePalette_to_1_20_5` + `postProcessContainerIfNeeded` 自动修正 | ❌ **读不了**。`SCHEMATIC_VERSION` 低于 7 的旧版会判定"文件版本太新" |
-| **Minecraft** | ✅ 一般能读。文件里的 `MinecraftDataVersion` 交给 DataFixer 升级，被删除或改名的方块可能丢几个 | ⚠️ 不一定。老版本没见过的方块会变成未知方块 |
-| **Blender** | ✅ 能装。manifest 只写了 `blender_version_min = 5.0.0`，**没有上限**；扩展 API 向后兼容 | ❌ 装不上（低于 5.0 直接被 manifest 拦掉） |
-| **Fabric / Forge / NeoForge** | ✅ **完全无关**。导出的是磁盘上的文件，跟模组加载器版本没有任何关系 | 同左 |
-
-**唯一需要小心的是 MC 跨大版本的方块改名**：`MinecraftDataVersion` 填错，DataFixer 就会走错修正表。换 MC
-版本时面板「游戏版本」要选对，或者干脆把新版客户端 jar 填上——DataVersion 直接从 jar 的 `version.json` 读，不用手填。
-
-要试别的版本，建议先导一遍 `examples/05_bugtest.blend` 再进游戏 Load：那 9 个块能最快暴露格式问题。
-
-上面「推荐版本」那张表是实际完整验收过的组合，其他组合没跑全量测试。
+上表所列组合已通过完整验收（`pytest` 207 项、端到端 22 项、Blender 真机 57 项）。其他版本组合尚未进行全量测试，使用前建议先以 `examples/05_bugtest.blend` 导出并在游戏内 Load，确认格式与方块映射正常。
 
 ### 方式一：装发布包（普通用户）
 
 1. 下载 `mc_voxel_export.zip`（[Releases](https://github.com/liz854/blender-mc-voxel/releases) 页）
 2. Blender → `Edit` → `Preferences` → `Add-ons` → 右上角 `▾` → **Install from Disk…**
 3. 选那个 zip，确认列表里 **Blender MC Voxel** 已勾选
-
-> Release 里还没传包的话，用下面的方式二自己打一个，两步就完。
 
 ### 方式二：从源码打包（开发者）
 
