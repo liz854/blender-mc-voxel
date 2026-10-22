@@ -1,22 +1,75 @@
 # MC Voxel Export
 
-把 Blender 网格体素化成 Minecraft 方块建筑，主力导出 `.litematic`（Litematica 投影），顺带支持 `.schem`（WorldEdit）和结构方块 `.nbt`。
+**把 Blender 模型一键体素化成 Minecraft 建筑。** 主力导出 `.litematic`（Litematica 投影），顺带支持 WorldEdit 的 `.schem` 和结构方块 `.nbt`。配色不是拍脑袋的色表，而是直接读你客户端 jar 里的真实方块平均色。
 
 ![Blender 里的小房子体素化后的等距预览](docs/images/house.png)
 
-> 状态：已在 **Blender 5.2.2 LTS** 里装好并跑通真机验收（`tools/blender_m1.py`，57 项全过），`pytest` 196 项全绿，导出结果在 **MC 26.3 + Fabric + Litematica 0.29.1** 游戏内 Load 成功。
+> 状态：在 **Blender 5.2.2 LTS** 实机验收通过（57 项），`pytest` **207 项**全绿，导出结果在 **MC 26.3 + Fabric + Litematica 0.29.1** 游戏内 Load 成功。
 
-## 装
+## 功能一览
 
+| 能力 | 说明 |
+|---|---|
+| **体素化** | 三角形-体素 16 轴 SAT，斜面和尖角不糊；按覆盖尺寸分组批量算，4000+ 三角形的模型秒级出结果 |
+| **三种导出格式** | `.litematic`（Litematica，主力）/ `.schem`（WorldEdit、FAWE）/ `.nbt`（结构方块，≤48³） |
+| **真实方块配色** | 直接读客户端 jar：1288 个 blockstate → 筛出 **300 种**能当建材的整方块，按 CIE Lab ΔE76 最近邻匹配 |
+| **纹理感知匹配** | 平涂的面配平纹理方块、有噪点的面配有噪点的方块，光面上不会突然冒出矿石斑点 |
+| **尺寸控制** | 直接给方块尺寸（1 体素 = N 米），或反过来「我要它高 200 格」自动反算倍率 |
+| **世界限高** | 主世界 / 下界 / 末地的高度上限从 jar 的 `dimension_type` 读，超限自动压倍率或拦下并给出改法 |
+| **重力方块保护** | 悬空的沙子 / 沙砾 / 混凝土粉末自动换成近似色，投影摆出去不会塌成一地 |
+| **白名单 / 禁用** | 只用某几种方块，或剔掉不想要的（支持 `*` 通配、面板内搜索添加，不用背 id） |
+| **等距预览图** | 不出 Blender 就能看游戏里大概什么样：正交相机 + 真实方块色 + 接触阴影 |
+| **反向导入** | `.litematic` / `.schem` 读回成 Blender 网格，可选平滑着色或 Remesh 磨圆 |
+| **可脱离 Blender** | `core/` 除 `mesh_data.py` 外不 import bpy，整套测试和导出都能在纯 Python 里跑 |
+
+## 安装
+
+### 需要什么
+
+| 项 | 要求 |
+|---|---|
+| Blender | **5.0 或更高**（`blender_manifest.toml` 里 `blender_version_min = 5.0.0`），实测在 **5.2.2 LTS** |
+| Python | 不用自己装，Blender 自带；核心算法只依赖 numpy（Blender 内置） |
+| 客户端 jar | 可选，但**强烈建议**：有它才有真实 300 色配色；没有会退到内置 96 色，颜色明显偏 |
+| 游戏侧 | Minecraft + [Litematica](https://modrinth.com/mod/litematica)（Load `.litematic` 用）；本机验证的是 MC 26.3 + Fabric + Litematica 0.29.1 |
+
+### 方式一：装发布包（普通用户）
+
+1. 下载 `mc_voxel_export.zip`（Release 页，或仓库里的 `dist/mc_voxel_export.zip`）
+2. Blender → `Edit` → `Preferences` → `Add-ons` → 右上角 `▾` → **Install from Disk…**
+3. 选那个 zip，确认列表里 **MC Voxel Export** 已勾选
+
+### 方式二：从源码打包（开发者）
+
+```bash
+git clone https://github.com/liz854/mc-voxel-export.git
+cd mc-voxel-export
+python tools/pack.py                         # 产出 dist/mc_voxel_export.zip
+blender.exe --command extension install-file -r user_default -e dist/mc_voxel_export.zip
 ```
-Blender → Edit → Preferences → Add-ons → 右上角 ▾ → Install from Disk…
-选 dist/mc_voxel_export.zip
-```
 
-装完在 3D 视图按 `N`，侧栏**最右边那一列竖排标签**里出现 **MC 体素**（`N` 弹出的 X/Y/Z 是 Blender 自带的物体变换面板，不是本扩展）。
+改完代码重跑这两条就是覆盖安装，不用手动删旧版。
+
+### 确认装好了
+
+3D 视图按 `N`，侧栏**最右边那一列竖排标签**里出现 **MC 体素**（`N` 弹出的 X/Y/Z 是 Blender 自带的物体变换面板，不是本扩展）。
 嫌不好找就用顶部菜单栏的 **MC 体素**，或右键物体 → **MC 体素** → **打开 MC 体素面板**，面板会弹成浮窗。
 
-## 用
+装好后第一次体素化，Console 里应该能看到一行：
+
+```
+[mc_voxel] 资源包方块 300 种（26.3-Fabric 0.20.1.jar）
+```
+
+数字不对或显示「用兜底 96 色」，就是没找到客户端 jar，见下面「快速上手」第 3 条。
+
+### 更新 / 卸载
+
+- **更新**：重新 Install from Disk 同一个包会直接覆盖（Blender 输出 `Reinstalled "mc_voxel_export"`）
+- **卸载**：Add-ons 列表里取消勾选，或右上角 `▾` → Uninstall
+- 色板缓存在扩展的用户目录，卸载不会删；想强制重建就删掉 `block_colors.json`，或换一个 jar
+
+## 快速上手
 
 1. 选中网格物体（没有顶点色会全白，先涂色或看 `examples/`）
 2. 点 **建筑 / 像素画 / 地形** 套预设，或自己调 **方块尺寸**（1 体素 = N 米）。10×10×10 的立方体配 1.0 → 1000 个方块
@@ -50,7 +103,7 @@ Blender → Edit → Preferences → Add-ons → 右上角 ▾ → Install from 
 
 反算出来的倍率如果会让高度超限高（比如只限制了"长 64 格"，但模型又瘦又高），会按下面的规则自动压到限高内。
 
-### 白名单与禁用（需求⑦）
+### 白名单与禁用
 
 面板上是两个文本框，填的就是**方块 id**（`stone`、`oak_planks`、`glass` 这种），语法一样：逗号、分号、空格、换行都能分隔，中英文标点都认。
 
@@ -73,6 +126,29 @@ Blender → Edit → Preferences → Add-ons → 右上角 ▾ → Install from 
 | **清空** | 清掉这个框 |
 | 输入框下面那行 「生效 …」 | 直接回读解析结果，`*wool*` 展开成哪几种都列出来，前 4 个显示名字、后面给总数 |
 | 右侧放大镜 | 弹窗列出**全部**生效方块（比侧栏宽），以及哪些名字在当前色板里找不到 |
+
+### 纹理感知匹配
+
+只按平均色匹配会有个毛病：一面纯色的墙，色差最小的方块可能带着斑点纹理（矿石、粗金属块），放大到 1 米一格后整面墙都在闪。所以匹配成本加了一项：
+
+```
+cost = ΔE76(色差) + 1.0 × |std_方块 − std_目标|
+```
+
+`std` 是纹理像素的颜色标准差（纯色方块 ≈ 0-5，石头类噪点 20-30，花纹理 35+，超过 42 的不进色板）。目标 std 取模型那一块区域的局部颜色方差，量化成 4 档（中心 4 / 14 / 27.5 / 47.5），每档预先建一张 32³ LUT——ΔE 矩阵只算一次，四档共用，构建开销可以忽略。
+
+**关键设计：目标 std 必须按颜色分组取 25% 分位，不能按体素直接取。** 颜色分界处的体素，3³ 邻域横跨两种颜色，std 会被自然抬高，按体素取就会把整条分界线判成"粗糙"，结果墙色交界处冒出一圈斑点方块（T6 灰阶、T8 四原色实测都踩到了）。同色区域内边界体素是少数，取低分位就能整体判"平"。
+
+对导出的实际影响（`tools/bugtest_export.py` 重导前后对比）：
+
+| 测试块 | 改前 | 改后 |
+|---|---|---|
+| T8 四原色 | 黄色被拆成羊毛 + 金块 + 紫水晶三种 | **四象限各 64 块，各一种方块** |
+| T3 / T3B 挖洞墙 | 白混凝土混萤光石、闪长岩 | **476 / 492 块全是一种白混凝土** |
+| T7 金字塔 | 红陶瓦 + 两种朱砂混拼 | **935 块全是一种红陶瓦** |
+| T6 五级灰阶 | 每级混入矿石 | 每级一种，无矿石 |
+
+色板没有纹理信息时（兜底 96 色、工具脚本直接传 `colors`）这一项自动关闭，行为与改前完全一致，性能零开销（200³ 实测 16.49s，改前 16.5s）。想手动关掉：`build_voxel_model(..., texture_match=False)`。
 
 ### 重力方块支撑
 
@@ -141,7 +217,7 @@ MC 有世界高度上限，**超出的方块 Litematica 摆投影时会静默跳
 不装 Blender 就能跑：
 
 ```bash
-python -m pytest -q          # 196 项，全绿
+python -m pytest -q          # 207 项，全绿
 python tools/verify.py       # 端到端 22 项检查，产物写到 dist/
 ```
 
@@ -183,7 +259,7 @@ Windows / Ryzen 机器，球体 4096 个三角形，`solid=True`：
 
 | 网格 | 耗时 | 峰值内存 |
 |---|---|---|
-| 100³（51 万方块） | **2.7 s** | 110 MB |
+| 100³（51 万方块） | **2.5 s** | 110 MB |
 | 200³（414 万方块） | 16.5 s | 646 MB |
 | 300³（1400 万方块） | 约 63 s | 2.1 GB |
 | 导出 100 万方块 | **0.08 s** | — |
@@ -246,12 +322,12 @@ core/                    除 mesh_data.py 外不 import bpy，可脱离 Blender 
   ir.py                  VoxelModel / BlockState
   yzx.py                 唯一的 YZX 索引 + bit packer
   voxelize.py            三角形-体素 AABB 的 16 轴 SAT（按尺寸分组批量算）
-  fill.py                6-连通 flood fill 内部填充 + 颜色扩散
+  fill.py                6-连通 flood fill 内部填充 + 颜色扩散 + 邻域颜色 std
   gravity.py             重力方块支撑检查
   png.py                 最小 PNG 解码（zlib + struct，支持 4bit 调色板）
-  pack.py                资源包解析 → 方块平均色
+  pack.py                资源包解析 → 方块平均色 + 纹理标准差
   color.py               sRGB → Lab(D65)、ΔE76
-  palette.py             32³ Lab LUT + 白名单/禁用
+  palette.py             32³ Lab LUT（纹理 4 档各一张）+ 白名单/禁用 + 纹理感知匹配
   nbt.py                 NBT 读写（大端、modified UTF-8、gzip）
   litematic.py           ★ P0 导出 / 读回
   schem.py               Sponge v2
@@ -267,7 +343,7 @@ ui/                      面板、操作符、属性
   preview_render.py      等距预览图（Workbench 渲染，唯一在 ui 里碰渲染的）
 data/fallback_palette.json
 examples/                5 个示例场景
-tests/                   196 项
+tests/                   207 项
 docs/images/             README 用的图
 tools/
   _paths.py              工具脚本共用的路径解析（自动找 jar / schematics，别写死本机路径）
@@ -321,7 +397,7 @@ tools/
 - 模型没有顶点色也没贴图时会全白（Suzanne 这种要先涂顶点色，见 `tools/blender_suzanne.py`）
 - 512³ 受稠密网格内存限制，会被守卫拦下（见「性能」）
 - 限高只按「y 跨度」判，不管摆放位置：384 格高的模型能通过，但得从 y=-64 起建才放得下
-- 纹理只取平均色，不做逐像素匹配
+- 纹理只取平均色 + 标准差两个统计量，不做逐像素结构匹配（砖纹不会对齐，也不会只因为图案好看就选某个方块）
 
 ## 格式对齐（按 Litematica 源码核对过）
 
@@ -346,12 +422,44 @@ tools/
 
 ## 验证状态
 
-- `pytest` 196 项全绿（含 9 项 golden 回归、13 项资源包解析、10 项重力规则、8 项禁用方块、33 项限高与倍率换算、9 项白名单框增删与 jar 自动查找）
+- `pytest` 207 项全绿（含 9 项 golden 回归、13 项资源包解析、10 项重力规则、8 项禁用方块、33 项限高与倍率换算、9 项白名单框增删与 jar 自动查找、11 项纹理感知匹配）
 - `tools/verify.py` 22 项端到端
 - Blender 5.2.2 真机 57 项（`tools/blender_m1.py`：含禁用/白名单生效且不留空洞、预设、单位换算、限高拦截、倍率反算、等距预览图、平滑两开关、搜索添加/清空/回读明细、jar 自动查找）
 - 真样本双向对拍：读得进去，重编码逐位相同
 - **游戏内实装已确认**（MC 26.3 + Fabric + Litematica 0.29.1）：16×16×16 空心盒装进 `.minecraft/schematics/`，游戏里 Load 出来形状、空心、开口位置、三色分层都对
 - 真实模型跑通：Suzanne 猴头 55×40×35 / 7509 方块 / 16 种方块，用 26.3 客户端 jar 的真实色板配色（`tools/blender_suzanne.py`）
-- 性能：100³ 2.7 s / 110 MB、200³ 16.5 s / 646 MB、100 万方块导出 0.08 s
+- 性能：100³ 2.5 s / 110 MB、200³ 16.5 s / 646 MB、100 万方块导出 0.08 s
 
 整条链闭合：Blender 场景 → 体素化 → `.litematic` → 游戏内可见。
+
+## 常见问题
+
+**按 `N` 找不到「MC 体素」标签**
+侧栏标签是竖排的，在最右边那一列，容易被窗口边缘裁掉；把侧栏拉宽一点。`N` 直接弹出的 X/Y/Z 是 Blender 自己的物体变换面板。也可以用顶部菜单栏 **MC 体素**，或右键物体 → **MC 体素**。
+
+**颜色明显偏 / Console 里说「用兜底 96 色」**
+没找到客户端 jar。面板「客户端 jar」填绝对路径（`.../versions/<版本>/<版本>.jar`），或点「自动找」。填对了 Console 会打印 `资源包方块 300 种`。
+
+**体素化出来全是白的**
+模型没有顶点色，也没有材质颜色。本扩展只读顶点色，不读贴图——先在 Blender 里涂顶点色（`examples/03_suzanne.blend` 是涂好的例子）。
+
+**导出后在游戏里 Load 不到**
+`.litematic` 要放进 `<游戏目录>/schematics/`；Litematica 版本必须支持你的游戏版本（26.3 对应 0.29.x）。
+
+**投影摆出来缺块 / 少一截头**
+两种情况：模型高过世界限高（Litematica 会静默跳过超出 y 范围的方块），或者用了会掉的方块。前者看面板「维度」下面提示的可用格数，后者看是否关掉了「悬空禁用重力方块」。
+
+**报错「网格 X×Y×Z 格，超过上限」**
+体素网格是稠密的，512³ 要 7 GB 内存。把方块尺寸调大（一格代表更多米），或把模型沿高度拆成几段分别导出。
+
+**体素化结果是 0 个方块**
+模型是单面片（Plane）且法线朝内，或者物体被隐藏/在别的集合里。检查 `Alt+H` 取消隐藏、法线方向（`Shift+N` 重算外侧）。
+
+**用整合包，自动找到的 jar 不对**
+整合包目录下常有一堆杂 jar。自动查找只认 `versions/<版本>/<版本>.jar` 这种标准布局；还不对就手动填路径，面板上填的优先级最高。
+
+## 许可证
+
+GPL-3.0-or-later，见 [LICENSE](LICENSE)。核心原因是 Blender 扩展体系本身要求 GPL 兼容，另外这个项目也是从 Litematica 的源码里核对格式细节才写对的。
+
+代码可以随意改、随意分发，但分发时要同样开源。有问题直接开 Issue。
