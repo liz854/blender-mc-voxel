@@ -1,4 +1,4 @@
-"""MC Voxel Export — 只负责 register / unregister。
+"""Blender MC Voxel — 只负责 register / unregister。
 
 注意：顶层不 import bpy，这样 core/ 能被 pytest 直接跑，也方便打包工具静态扫描。
 """

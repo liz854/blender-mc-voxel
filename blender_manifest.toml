@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 id = "mc_voxel_export"
 version = "0.2.0"
-name = "MC Voxel Export"
+name = "Blender MC Voxel"
 tagline = "把 Blender 模型体素化成 Minecraft 建筑，导出 Litematica 投影"
 maintainer = "liz854"
 type = "add-on"

@@ -1,4 +1,4 @@
-# MC Voxel Export
+# Blender MC Voxel
 
 **把 Blender 模型一键体素化成 Minecraft 建筑。** 主力导出 `.litematic`（Litematica 投影），顺带支持 WorldEdit 的 `.schem` 和结构方块 `.nbt`。配色不是拍脑袋的色表，而是直接读你客户端 jar 里的真实方块平均色。
 
@@ -57,13 +57,13 @@
 
 1. 下载 `mc_voxel_export.zip`（Release 页，或仓库里的 `dist/mc_voxel_export.zip`）
 2. Blender → `Edit` → `Preferences` → `Add-ons` → 右上角 `▾` → **Install from Disk…**
-3. 选那个 zip，确认列表里 **MC Voxel Export** 已勾选
+3. 选那个 zip，确认列表里 **Blender MC Voxel** 已勾选
 
 ### 方式二：从源码打包（开发者）
 
 ```bash
-git clone https://github.com/liz854/mc-voxel-export.git
-cd mc-voxel-export
+git clone https://github.com/liz854/blender-mc-voxel.git
+cd blender-mc-voxel
 python tools/pack.py                         # 产出 dist/mc_voxel_export.zip
 blender.exe --command extension install-file -r user_default -e dist/mc_voxel_export.zip
 ```
