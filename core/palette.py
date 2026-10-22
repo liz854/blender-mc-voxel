@@ -15,6 +15,12 @@ from .color import delta_e76, srgb_to_lab
 LUT_N = 32
 NO_MATCH = -1
 
+# 目标纹理粗糙度量化档位：std_target 落进哪个区间就用对应中心的 LUT。
+# 方块侧 std：纯色 ~0-5，石头类噪点 20-30，花纹理（上限剪到 42）35+。
+# 模型侧 std：平涂的面 ~0，渐变/噪点区域中等，混色边界高。
+TEXTURE_BIN_EDGES = (8.0, 20.0, 35.0)
+TEXTURE_BIN_CENTERS = (4.0, 14.0, 27.5, 47.5)
+
 DEFAULT_NAMESPACE = "minecraft"
 
 _SPLIT = re.compile(r"[,;，；\s]+")
@@ -90,21 +96,38 @@ def drop_filter(text: str, name: str) -> str:
     return ", ".join(t for t in filter_tokens(text) if t.lower() != low)
 
 
+def texture_bin(std: float) -> int:
+    """目标 std -> 档位序号（0..len(CENTERS)-1）。"""
+    return int(np.searchsorted(TEXTURE_BIN_EDGES, float(std), side="right"))
+
+
 class BlockPalette:
     """把颜色映射到方块名。
 
     colors : {block_name: (r,g,b)}
     allow  : 只允许这些方块（None 表示不限）
     deny   : 排除这些方块（如玻璃、水）
+    stds   : {block_name: 纹理标准差}。给了它，查询时就可以带上目标粗糙度，
+             成本变成 ΔE76 + texture_weight × |std_方块 - std_目标|，
+             "平的面配平的方块、有纹理的面配有纹理的方块"。
+             不带目标粗糙度的查询走纯颜色 LUT，行为和以前完全一样。
+    texture_weight : 纹理项权重。1.0 = std 差满档（约 44）抵得上一个很大的色差。
     """
 
-    def __init__(self, colors: dict, allow=None, deny=None):
+    def __init__(
+        self,
+        colors: dict,
+        allow=None,
+        deny=None,
+        stds: dict = None,
+        texture_weight: float = 1.0,
+    ):
         if not colors:
             raise ValueError("色板不能为空")
         allow_set = set(allow) if allow is not None else None
         deny_set = set(deny) if deny is not None else set()
 
-        names, rgbs = [], []
+        names, rgbs, std_vals = [], [], []
         for name, rgb in colors.items():
             if allow_set is not None and name not in allow_set:
                 continue
@@ -112,14 +135,24 @@ class BlockPalette:
                 continue
             names.append(name)
             rgbs.append(tuple(float(v) for v in rgb))
+            std_vals.append(float(stds.get(name, 0.0)) if stds else 0.0)
         if not names:
             raise ValueError("过滤后色板为空，检查 allow / deny")
 
         self.names = names
         self.rgbs = np.asarray(rgbs, dtype=np.float64)  # (N,3)
         self.labs = srgb_to_lab(self.rgbs)  # (N,3)
+        self.texture_weight = float(texture_weight)
+        self.stds = np.asarray(std_vals, dtype=np.float64)  # (N,)
         self.lut = self._build_lut()
+        self.luts = (
+            self._build_std_luts() if self._has_texture_info() else None
+        )
         self._fill_empty()
+
+    def _has_texture_info(self) -> bool:
+        """色板里至少要有一平一花才值得开纹理匹配。"""
+        return bool(self.stds.size) and float(self.stds.max()) - float(self.stds.min()) > 1.0
 
     # ---- LUT ----
     def _bin_centers(self) -> np.ndarray:
@@ -139,22 +172,40 @@ class BlockPalette:
             out[start : start + step] = np.argmin(d, axis=1).astype(np.int16)
         return out.reshape(LUT_N, LUT_N, LUT_N)
 
+    def _build_std_luts(self) -> list:
+        """每档目标粗糙度一张 LUT。ΔE 矩阵只算一次，各档加纹理项后取 argmin。"""
+        centers = self._bin_centers()
+        luts = []
+        step = 2048
+        w = self.texture_weight
+        for target in TEXTURE_BIN_CENTERS:
+            out = np.full(len(centers), NO_MATCH, dtype=np.int16)
+            penalty = w * np.abs(self.stds[None, :] - float(target))  # (1,N)
+            for start in range(0, len(centers), step):
+                chunk = centers[start : start + step]
+                d = delta_e76(chunk[:, None, :], self.labs[None, :, :]) + penalty
+                out[start : start + step] = np.argmin(d, axis=1).astype(np.int16)
+            luts.append(out.reshape(LUT_N, LUT_N, LUT_N))
+        return luts
+
     def _fill_empty(self) -> None:
         """空格用 3×3×3 邻域填充（正常构建不会留空，兜底用）。"""
-        if (self.lut != NO_MATCH).all():
-            return
-        lut = self.lut.copy()
-        for _ in range(4):
-            empty = lut == NO_MATCH
-            if not empty.any():
-                break
-            best = np.full_like(lut, NO_MATCH)
-            for axis in range(3):
-                for shift in (-1, 1):
-                    cand = np.roll(lut, shift, axis=axis)
-                    best = np.where((best == NO_MATCH) & (cand != NO_MATCH), cand, best)
-            lut = np.where(empty, best, lut)
-        self.lut = lut
+        luts = [self.lut] + (self.luts or [])
+        for lut in luts:
+            if (lut != NO_MATCH).all():
+                continue
+            for _ in range(4):
+                empty = lut == NO_MATCH
+                if not empty.any():
+                    break
+                best = np.full_like(lut, NO_MATCH)
+                for axis in range(3):
+                    for shift in (-1, 1):
+                        cand = np.roll(lut, shift, axis=axis)
+                        best = np.where(
+                            (best == NO_MATCH) & (cand != NO_MATCH), cand, best
+                        )
+                lut[...] = np.where(empty, best, lut)
 
     # ---- 查询 ----
     @staticmethod
@@ -165,21 +216,33 @@ class BlockPalette:
         k = np.clip(((b + 128.0) / 256.0 * LUT_N).astype(np.int64), 0, LUT_N - 1)
         return i, j, k
 
-    def nearest_index(self, rgb):
+    def nearest_index(self, rgb, std=None):
         lab = srgb_to_lab(np.asarray(rgb, dtype=np.float64))
         i, j, k = self._indices(lab)
+        if std is not None and self.luts is not None:
+            return int(self.luts[texture_bin(std)][i, j, k])
         return int(self.lut[i, j, k])
 
-    def nearest(self, rgb) -> str:
-        return self.names[self.nearest_index(rgb)]
+    def nearest(self, rgb, std=None) -> str:
+        return self.names[self.nearest_index(rgb, std)]
 
-    def nearest_batch(self, rgbs) -> list:
-        """(K,3) 颜色 -> [block_name, …]"""
+    def nearest_batch(self, rgbs, stds=None) -> list:
+        """(K,3) 颜色 -> [block_name, …]
+
+        stds 给了且色板带纹理信息时，用对应档位的 LUT（纹理感知匹配）。
+        """
         arr = np.asarray(rgbs, dtype=np.float64)
         flat = arr.reshape(-1, 3)
         labs = srgb_to_lab(flat)
         i, j, k = self._indices(labs)
-        idx = self.lut[i, j, k]
+        if stds is not None and self.luts is not None:
+            bins = [texture_bin(s) for s in stds]
+            idx = np.asarray(
+                [self.luts[b][i[n], j[n], k[n]] for n, b in enumerate(bins)],
+                dtype=np.int64,
+            )
+        else:
+            idx = self.lut[i, j, k]
         return [self.names[int(v)] for v in idx]
 
     # ---- 兜底 ----
@@ -205,7 +268,14 @@ class BlockPalette:
         colors = {n: rgb for n, rgb in self.colors_dict().items() if n not in ban}
         if not colors:
             return self
-        return BlockPalette(colors)
+        stds = None
+        if self.luts is not None:
+            stds = {
+                n: float(s) for n, s in zip(self.names, self.stds) if n not in ban
+            }
+        return BlockPalette(
+            colors, stds=stds, texture_weight=self.texture_weight
+        )
 
 
 def load_fallback_palette(path: str = None) -> dict:

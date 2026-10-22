@@ -36,13 +36,14 @@ def _get_palette(props) -> BlockPalette:
     就是 323 种真实方块色，而不是一片偏差很大的兜底色。
     """
     colors = None
+    stds = None
     jar = bpy.path.abspath(props.jar_path) if props.jar_path else (mcver.find_client_jar() or "")
     if jar and os.path.exists(jar):
         try:
-            from ..core.pack import load_cached
+            from ..core.pack import load_cached_stats
             from .paths import cache_file
 
-            colors = load_cached(jar, cache_file())
+            colors, stds = load_cached_stats(jar, cache_file())
             print(f"[mc_voxel] 资源包方块 {len(colors or {})} 种（{os.path.basename(jar)}）")
         except Exception as exc:  # 资源包解析失败不致命，但要说清为什么
             print(f"[mc_voxel] 读资源包失败，用兜底色板：{exc}")
@@ -52,6 +53,7 @@ def _get_palette(props) -> BlockPalette:
         print("[mc_voxel] 没找到客户端 jar，用兜底 96 色（颜色会偏）")
     if not colors:
         colors = load_fallback_palette()
+        stds = None
 
     # 白名单：只用这些方块。留空表示不限制。
     allow = None
@@ -79,10 +81,10 @@ def _get_palette(props) -> BlockPalette:
         )
 
     if allow is None and not deny:
-        return BlockPalette(colors)
+        return BlockPalette(colors, stds=stds)
 
     try:
-        palette = BlockPalette(colors, allow=allow, deny=deny)
+        palette = BlockPalette(colors, allow=allow, deny=deny, stds=stds)
     except ValueError as exc:
         raise RuntimeError(f"过滤后方块一个不剩（{exc}），检查白名单/禁用方块") from exc
 

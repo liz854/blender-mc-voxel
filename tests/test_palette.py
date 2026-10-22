@@ -2,7 +2,12 @@ import numpy as np
 import pytest
 
 from core.color import delta_e76, srgb_to_lab
-from core.palette import BlockPalette, load_fallback_palette
+from core.palette import (
+    TEXTURE_BIN_CENTERS,
+    BlockPalette,
+    load_fallback_palette,
+    texture_bin,
+)
 
 
 def test_white_black():
@@ -165,3 +170,93 @@ def test_drop_filter_removes_one_without_touching_others():
     assert drop_filter("glass", "") == "glass"
     # 删干净之后是空串，不能留个逗号
     assert drop_filter("glass", "glass") == ""
+
+
+# ---------------- 纹理感知匹配（std 进成本） ----------------
+
+def test_texture_bin_edges():
+    assert texture_bin(0) == 0
+    assert texture_bin(7.9) == 0
+    assert texture_bin(8) == 1
+    assert texture_bin(20) == 2
+    assert texture_bin(34.9) == 2
+    assert texture_bin(35) == 3
+    assert texture_bin(255) == 3
+    assert len(TEXTURE_BIN_CENTERS) == 4
+
+
+def _std_test_palette():
+    colors = {
+        "minecraft:flat_block": (128, 128, 128),
+        "minecraft:mid_block": (130, 128, 126),
+        "minecraft:busy_block": (128, 128, 128),
+    }
+    stds = {
+        "minecraft:flat_block": 2.0,
+        "minecraft:mid_block": 14.0,
+        "minecraft:busy_block": 30.0,
+    }
+    return BlockPalette(colors, stds=stds)
+
+
+def test_texture_match_prefers_smooth_for_flat_target():
+    """同平均色一平一花：平的目标选平的，粗的目标选花的。"""
+    p = _std_test_palette()
+    assert p.luts is not None
+    assert p.nearest((128, 128, 128), std=1.0) == "minecraft:flat_block"
+    # 中间档（bin 1，中心 14）：mid_block 的 std 正好 14，赢
+    assert p.nearest((128, 128, 128), std=14.0) == "minecraft:mid_block"
+    assert p.nearest((128, 128, 128), std=27.0) == "minecraft:busy_block"
+    assert p.nearest((128, 128, 128), std=45.0) == "minecraft:busy_block"
+
+
+def test_texture_batch_uses_per_row_bins():
+    p = _std_test_palette()
+    got = p.nearest_batch(
+        np.full((3, 3), 128.0), stds=[1.0, 27.0, 45.0]
+    )
+    assert got == ["minecraft:flat_block", "minecraft:busy_block", "minecraft:busy_block"]
+
+
+def test_texture_off_when_all_stds_equal():
+    """全色板 std 一样时纹理项没意义，别白建 4 张 LUT。"""
+    colors = {"minecraft:a": (1, 2, 3), "minecraft:b": (4, 5, 6)}
+    p = BlockPalette(colors, stds={n: 10.0 for n in colors})
+    assert p.luts is None
+
+
+def test_no_stds_keeps_plain_behavior():
+    p = BlockPalette(load_fallback_palette())
+    assert p.luts is None
+    # 带 std 参数也不炸，只是忽略
+    assert p.nearest((128, 128, 128), std=30.0) == p.nearest((128, 128, 128))
+
+
+def test_color_only_query_ignores_std_dimension():
+    """重力替换这些内部查询不带 std，必须走纯颜色 LUT，行为不变。"""
+    colors = {
+        "minecraft:flat_block": (128, 128, 128),
+        "minecraft:mid_block": (130, 128, 126),
+        "minecraft:busy_block": (128, 128, 128),
+    }
+    with_std = BlockPalette(
+        colors,
+        stds={
+            "minecraft:flat_block": 2.0,
+            "minecraft:mid_block": 14.0,
+            "minecraft:busy_block": 30.0,
+        },
+    )
+    plain = BlockPalette(colors)
+    # 同一组查询，带不带 std 的纯颜色路径必须给同样的答案
+    for rgb in ((128, 128, 128), (130, 128, 126), (60, 60, 60)):
+        assert with_std.nearest(rgb) == plain.nearest(rgb)
+
+
+def test_without_carries_stds():
+    p = _std_test_palette()
+    q = p.without(["minecraft:flat_block"])
+    assert q.names == ["minecraft:mid_block", "minecraft:busy_block"]
+    assert q.luts is not None
+    assert q.stds.tolist() == [14.0, 30.0]
+    assert q.nearest((128, 128, 128), std=1.0) == "minecraft:mid_block"

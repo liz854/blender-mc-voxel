@@ -85,11 +85,11 @@ def load_palette() -> BlockPalette:
     jar = mcver.find_client_jar()
     if not jar:
         raise RuntimeError("找不到客户端 jar")
-    from bl_ext.user_default.mc_voxel_export.core.pack import load_cached
+    from bl_ext.user_default.mc_voxel_export.core.pack import load_cached_stats
 
-    colors = load_cached(jar, cache_file())
-    print(f"[bugtest] 色板 {len(colors)} 种（{os.path.basename(jar)}）")
-    return BlockPalette(colors)
+    colors, stds = load_cached_stats(jar, cache_file())
+    print(f"[bugtest] 色板 {len(colors)} 种（{os.path.basename(jar)}），纹理匹配开")
+    return BlockPalette(colors, stds=stds)
 
 
 def merge(names) -> bpy.types.Object:
@@ -201,7 +201,7 @@ def main():
         "- **同一面墙在游戏里亮度不均**：MC 按朝向打光，顶面最亮、东西面最暗，同一个方块换个面看就是深浅不同。"
         "判断颜色对不对看**纹理**（同一个方块纹理一致就对了），别看明暗",
         "- **斜面是阶梯状的**：体素化本来就是把斜面拆成一格一格，T7 金字塔必然有台阶，不是漏面",
-        "- **渐变是一级一级跳的**：色板只有 316 种方块，红到蓝不可能连续过渡",
+        "- **渐变是一级一级跳的**：色板只有 300 种方块，红到蓝不可能连续过渡",
         "- **悬空的沙变成砂岩色**：这是重力规则，故意的（不换的话投影摆出去会塌成一地沙子）",
         "- **两个颜色落到同一个方块**：两种色在 Lab 空间离同一个方块最近时会撞色，属于色板分辨率的极限",
         "- **T4 里有零星几个相近色的方块**：沙子和末地石/可疑沙的平均色只差几个色阶，"
@@ -209,9 +209,9 @@ def main():
         "- **四个应该一样大的方块，看着不一样大**：纯色方块（混凝土）没有格子边界，"
         "带纹理的方块（红石块、金块）每一格都有边框，观感上会显得更大。"
         "实测 T8 四个象限各 64 格 = 4×4×4，完全一致",
-        "- **渐变 / 灰阶里冒出带斑点的方块**（矿石、紫水晶、金块）：色板只有 300 种，"
-        "红到蓝之间的中间色很少，最近邻只能选到「平均色接近」的那个，纹理未必像。"
-        "这是平均色匹配的固有结果，不是选错；想要纯色就用面板的「只用这些方块」限定",
+        "- **渐变 / 灰阶里冒出带斑点的方块**：纹理感知匹配开着，平色区域会优先选平纹理的方块；"
+        "但渐变区域本身颜色在变，邻域粗糙度不算低，仍可能选到纹理较花的方块。"
+        "想要更平就用面板的「只用这些方块」限定",
         "",
         "对照表里「实际用到的主要方块」是这次导出真正选中的方块，"
         "**这一列和你截图里看到的纹理不一致，就是 bug**。",

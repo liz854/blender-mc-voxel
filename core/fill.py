@@ -127,3 +127,44 @@ def flood_colors(mask: np.ndarray, rgb: np.ndarray, max_iter: int = None):
 
     out[np.isnan(out[..., 0])] = 127.0
     return out
+
+
+def neighborhood_std(xs, ys, zs, rgb, size) -> np.ndarray:
+    """每个命中体素在 3×3×3 邻域内的颜色标准差（各通道平均）。
+
+    用来当"目标纹理粗糙度"：平涂的面颜色几乎不变 std≈0，
+    渐变 / 噪点 / 花纹区域 std 明显更大。匹配时让平的面配平纹理的方块。
+
+    xs/ys/zs : 命中体素的网格坐标（已由调用方 unravel 好的三个数组）
+    rgb      : (sx,sy,sz,3) 颜色网格（flood_colors 之后的，全有效）
+    size     : 网格尺寸 (sx,sy,sz)
+    """
+    sx, sy, sz = size
+    xs = np.asarray(xs)
+    ys = np.asarray(ys)
+    zs = np.asarray(zs)
+    n = xs.size
+    acc = np.zeros((n, 3), dtype=np.float64)
+    acc2 = np.zeros((n, 3), dtype=np.float64)
+    cnt = np.zeros(n, dtype=np.float64)
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                nx = np.clip(xs + dx, 0, sx - 1)
+                ny = np.clip(ys + dy, 0, sy - 1)
+                nz = np.clip(zs + dz, 0, sz - 1)
+                v = rgb[nx, ny, nz]
+                ok = np.isfinite(v[:, 0])
+                if not ok.any():
+                    continue
+                vv = v[ok]
+                acc[ok] += vv
+                acc2[ok] += vv * vv
+                cnt[ok] += 1.0
+    std = np.zeros(n, dtype=np.float64)
+    good = cnt > 0
+    if good.any():
+        mean = acc[good] / cnt[good][:, None]
+        var = acc2[good] / cnt[good][:, None] - mean * mean
+        std[good] = np.sqrt(np.clip(var, 0.0, None)).mean(axis=1)
+    return std

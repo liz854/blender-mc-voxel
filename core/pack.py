@@ -15,9 +15,9 @@ from . import png
 
 TEXTURE_KEYS = ("all", "top", "side", "texture", "particle", "end", "bottom")
 
-# 改了解析逻辑（过滤规则、tint、取纹理的优先级）就 +1，让旧缓存失效。
-# 否则代码修好了、缓存还是旧结果，问题看起来"没修好"。
-CACHE_VERSION = 6
+# 改了解析逻辑（过滤规则、tint、取纹理的优先级、缓存里存 std）就 +1，
+# 让旧缓存失效。否则代码修好了、缓存还是旧结果，问题看起来"没修好"。
+CACHE_VERSION = 7
 
 # 这些方块的纹理是灰度图，游戏里按生物群系 tint 上色。
 # 不乘上 tint，草方块和树叶会变成灰色，体素配色直接废掉。
@@ -315,14 +315,14 @@ def _is_building_block(name: str) -> bool:
     return True
 
 
-def load_block_colors(
+def _load_block_entries(
     jar_path: str,
     names=None,
     skip=("minecraft:air", "minecraft:cave_air", "minecraft:void_air"),
     full_cube_only: bool = True,
     max_texture_std: float = 42.0,
-) -> Dict[str, Tuple[int, int, int]]:
-    """从 jar / 资源包读出方块平均色表。
+) -> Dict[str, Tuple[Tuple[int, int, int], float]]:
+    """从 jar / 资源包读出 {方块名: (平均色, 纹理标准差)}。
 
     full_cube_only=True 时只保留"整方块"（模型里有盖满 0..16 的方盒），
     排除楼梯/台阶/门/栅栏/按钮等，否则体素可能被匹配成形状不对的方块。
@@ -330,7 +330,7 @@ def load_block_colors(
     max_texture_std 按纹理颜色标准差过滤"花纹理"方块（书架、工作台那种），
     纯色方块 std 接近 0，石头这类有噪点的在 20-30 左右。
     """
-    out: Dict[str, Tuple[int, int, int]] = {}
+    out: Dict[str, Tuple[Tuple[int, int, int], float]] = {}
     with ResourcePack(jar_path) as rp:
         candidates = names if names is not None else rp.block_names()
         for name in candidates:
@@ -342,40 +342,85 @@ def load_block_colors(
             rgb, std = stats
             if std > max_texture_std:
                 continue
-            out[name] = rgb
+            out[name] = (rgb, float(std))
     return out
 
 
-def load_cached(jar_path: str, cache_path: str):
-    """带磁盘缓存（JSON）。缓存键里带 jar 的 mtime。
+def load_block_colors(
+    jar_path: str,
+    names=None,
+    skip=("minecraft:air", "minecraft:cave_air", "minecraft:void_air"),
+    full_cube_only: bool = True,
+    max_texture_std: float = 42.0,
+) -> Dict[str, Tuple[int, int, int]]:
+    """从 jar / 资源包读出方块平均色表（不要纹理 std 的旧接口）。"""
+    return {
+        name: rgb
+        for name, (rgb, _std) in _load_block_entries(
+            jar_path,
+            names=names,
+            skip=skip,
+            full_cube_only=full_cube_only,
+            max_texture_std=max_texture_std,
+        ).items()
+    }
 
-    空结果绝不写缓存：解析失败（jar 不完整、代码有 bug）时如果落了空表，
-    之后即使问题修好也会一直命中空缓存，颜色永远是兜底色板而且没人察觉。
-    """
-    import json
+
+def _cache_key(jar_path: str) -> dict:
     import os
 
     try:
         stamp = os.path.getmtime(jar_path)
     except OSError:
         stamp = 0
-    key = {"jar": os.path.abspath(jar_path), "mtime": stamp, "v": CACHE_VERSION}
+    return {"jar": os.path.abspath(jar_path), "mtime": stamp, "v": CACHE_VERSION}
+
+
+def load_cached(jar_path: str, cache_path: str):
+    """带磁盘缓存（JSON），只返回平均色表（兼容旧调用方）。"""
+    return load_cached_stats(jar_path, cache_path)[0]
+
+
+def load_cached_stats(jar_path: str, cache_path: str):
+    """带磁盘缓存（JSON），返回 (色表, 纹理标准差表)。
+
+    缓存键里带 jar 的 mtime。
+    空结果绝不写缓存：解析失败（jar 不完整、代码有 bug）时如果落了空表，
+    之后即使问题修好也会一直命中空缓存，颜色永远是兜底色板而且没人察觉。
+    """
+    import json
+    import os
+
+    key = _cache_key(jar_path)
     if os.path.exists(cache_path):
         try:
             with open(cache_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             colors = data.get("colors") or {}
+            stds = data.get("stds") or {}
             if data.get("key") == key and colors:
-                return {k: tuple(v) for k, v in colors.items()}
+                return (
+                    {k: tuple(v) for k, v in colors.items()},
+                    {k: float(v) for k, v in stds.items()},
+                )
         except Exception:
             pass
-    colors = load_block_colors(jar_path)
-    if not colors:
-        return colors
+    entries = _load_block_entries(jar_path)
+    if not entries:
+        return {}, {}
+    colors = {k: v[0] for k, v in entries.items()}
+    stds = {k: v[1] for k, v in entries.items()}
     try:
         os.makedirs(os.path.dirname(os.path.abspath(cache_path)), exist_ok=True)
         with open(cache_path, "w", encoding="utf-8") as f:
-            json.dump({"key": key, "colors": {k: list(v) for k, v in colors.items()}}, f)
+            json.dump(
+                {
+                    "key": key,
+                    "colors": {k: list(v) for k, v in colors.items()},
+                    "stds": stds,
+                },
+                f,
+            )
     except Exception:
         pass
-    return colors
+    return colors, stds

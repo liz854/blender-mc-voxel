@@ -59,6 +59,40 @@ def test_voxel_model_colors_are_from_palette():
     assert "red" in used.pop()
 
 
+def test_texture_match_flat_region_picks_smooth_block():
+    """平涂的面必须选平纹理的方块，即使色板里有同平均色的花纹理方块。"""
+    colors = {
+        "minecraft:flat_block": (120, 120, 120),
+        "minecraft:busy_block": (120, 120, 120),
+    }
+    stds = {"minecraft:flat_block": 2.0, "minecraft:busy_block": 30.0}
+    pal = BlockPalette(colors, stds=stds)
+    verts, tris = box_mesh((0, 0, 0), (8, 8, 8))
+    vc = np.tile(np.array([[120.0, 120.0, 120.0]]), (len(verts), 1))
+    model = core_build.build_voxel_model(verts, tris, vc, 1.0, pal)
+    used = {model.palette[int(i)].name for i in np.unique(model.blocks)}
+    assert used == {"minecraft:flat_block"}
+
+
+def test_texture_targets_low_quantile_ignores_boundary():
+    """颜色分界处的体素邻域横跨两色、std 虚高；同色区域取 25% 分位
+    必须仍判"平"，否则墙色分界线会长出花纹理斑点。"""
+    u8 = np.full((10, 1, 3), 200, dtype=np.uint8)
+    u8[:, 0, 0] = 40  # 随便让每行同色
+    std = np.array([0.0] * 8 + [40.0, 40.0])
+    uniq, target = core_build.texture_targets_by_color(u8, std)
+    assert len(uniq) == 1
+    assert target[0] == pytest.approx(0.0)  # 25% 分位吃掉两个高值
+
+
+def test_texture_targets_high_when_majority_noisy():
+    """反过来：多数体素都粗糙时不能被误判成平的。"""
+    u8 = np.full((10, 1, 3), 200, dtype=np.uint8)
+    std = np.array([0.0, 35.0, 38.0, 40.0, 42.0, 36.0, 39.0, 41.0, 37.0, 40.0])
+    _, target = core_build.texture_targets_by_color(u8, std)
+    assert target[0] > 20.0  # 25% 分位仍落在高档
+
+
 def test_mesh_export_normals_outward():
     verts, tris = box_mesh((0, 0, 0), (4, 4, 4))
     model = core_build.build_voxel_model(verts, tris, white_colors(len(verts)), 1.0, palette())

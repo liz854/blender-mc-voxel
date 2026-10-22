@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from .fill import fill_interior, flood_colors
+from .fill import fill_interior, flood_colors, neighborhood_std
 from .gravity import enforce_gravity_support
 from .ir import BlockState, VoxelModel
+from .palette import TEXTURE_BIN_CENTERS, texture_bin
 from .voxelize import voxelize_surface
 from .yzx import mask_to_flat
 
@@ -21,6 +22,27 @@ def grid_from_bounds(verts, block_size: float):
     return lo, tuple(int(s) for s in size)
 
 
+def texture_targets_by_color(vox_u8, vox_std):
+    """每种颜色一个目标粗糙度 = 该颜色所有体素 std 的 25% 分位。
+
+    按体素直接取会把颜色分界处的体素判成"粗糙"（邻域横跨两种颜色，
+    std 被抬高），墙色分界线就会长出花纹理斑点；同色区域内边界体素
+    是少数，取低分位整体判"平"。
+
+    返回 (uniq 颜色表, 每色的目标 std)。
+    """
+    uniq, inverse = np.unique(vox_u8, axis=0, return_inverse=True)
+    order = np.argsort(inverse, kind="stable")
+    sorted_std = np.asarray(vox_std, dtype=np.float64)[order]
+    counts = np.bincount(inverse, minlength=len(uniq))
+    edges = np.concatenate(([0], np.cumsum(counts)))
+    target = np.empty(len(uniq), dtype=np.float64)
+    for ci in range(len(uniq)):
+        seg = sorted_std[edges[ci] : edges[ci + 1]]
+        target[ci] = float(np.percentile(seg, 25)) if seg.size else 0.0
+    return uniq, target
+
+
 def build_voxel_model(
     verts,
     tris,
@@ -32,6 +54,7 @@ def build_voxel_model(
     size=None,
     progress=None,
     no_floating_gravity: bool = True,
+    texture_match: bool = True,
     max_voxels: int = 64_000_000,
 ) -> VoxelModel:
     """网格 -> VoxelModel。
@@ -42,6 +65,8 @@ def build_voxel_model(
     palette: core.palette.BlockPalette
     solid  : True 填充内部，False 只留外壳
     no_floating_gravity : 悬空的沙子/沙砾换成近似色，见 core/gravity.py
+    texture_match : 色板带纹理 std 时，按局部颜色粗糙度匹配
+                  （平的面配平纹理的方块）。色板没带 std 时自动不起作用。
     max_voxels : 网格体积上限（默认 6400 万格 ≈ 400³），超了直接报错而不是 OOM
     """
     verts = np.asarray(verts, dtype=np.float64)
@@ -89,12 +114,24 @@ def build_voxel_model(
     if progress:
         progress("匹配方块")
 
-    uniq, inverse = np.unique(
-        np.clip(np.round(vox_rgb), 0, 255).astype(np.uint8), axis=0, return_inverse=True
-    )
-    name_cache = {}
-    for rgb_key, name in zip(uniq, palette.nearest_batch(uniq.astype(np.float64))):
-        name_cache[tuple(int(v) for v in rgb_key)] = name
+    vox_u8 = np.clip(np.round(vox_rgb), 0, 255).astype(np.uint8)
+
+    # 纹理感知匹配：目标粗糙度按颜色分组取低分位（见 texture_targets_by_color），
+    # 平色块的分界线不会长斑点，渐变区域也不会比纯颜色匹配更花。
+    uniq, inverse = np.unique(vox_u8, axis=0, return_inverse=True)
+    if texture_match and getattr(palette, "luts", None) is not None:
+        vox_std = neighborhood_std(xs, ys, zs, rgb, size)
+        uniq, target_std = texture_targets_by_color(vox_u8, vox_std)
+        bin_centers = np.asarray(TEXTURE_BIN_CENTERS)[
+            [texture_bin(s) for s in target_std]
+        ]
+        matched = palette.nearest_batch(uniq.astype(np.float64), stds=bin_centers)
+    else:
+        matched = palette.nearest_batch(uniq.astype(np.float64))
+
+    name_cache = {
+        tuple(int(v) for v in row): name for row, name in zip(uniq, matched)
+    }
 
     key_idx = {}
     out = np.zeros(hit.size, dtype=np.int64)

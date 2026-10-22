@@ -217,6 +217,19 @@ def test_cache_roundtrip(tmp_path):
     assert first == second == {"minecraft:stone": (126, 126, 126)}
 
 
+def test_cache_roundtrip_with_stds(tmp_path):
+    """缓存必须把纹理 std 一起存，否则重启后纹理匹配静默退化成纯颜色。"""
+    jar = _make_pack(tmp_path / "p.zip", {"minecraft:stone": {"texture_rgb": (126, 126, 126)}})
+    cache = tmp_path / "c.json"
+    colors1, stds1 = pack.load_cached_stats(jar, str(cache))
+    colors2, stds2 = pack.load_cached_stats(jar, str(cache))  # 命中缓存
+    assert colors1 == colors2 == {"minecraft:stone": (126, 126, 126)}
+    assert stds1 == stds2
+    assert "minecraft:stone" in stds1 and stds1["minecraft:stone"] >= 0.0
+    # 旧接口读同一个缓存文件也正常
+    assert pack.load_cached(jar, str(cache)) == colors1
+
+
 # --------------------------------------------------------------------------
 # 真实客户端 jar（有就跑，没有跳过）
 # --------------------------------------------------------------------------
