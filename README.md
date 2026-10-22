@@ -55,9 +55,11 @@
 
 ### 方式一：装发布包（普通用户）
 
-1. 下载 `mc_voxel_export.zip`（Release 页，或仓库里的 `dist/mc_voxel_export.zip`）
+1. 下载 `mc_voxel_export.zip`（[Releases](https://github.com/liz854/blender-mc-voxel/releases) 页）
 2. Blender → `Edit` → `Preferences` → `Add-ons` → 右上角 `▾` → **Install from Disk…**
 3. 选那个 zip，确认列表里 **Blender MC Voxel** 已勾选
+
+> Release 里还没传包的话，用下面的方式二自己打一个，两步就完。
 
 ### 方式二：从源码打包（开发者）
 
