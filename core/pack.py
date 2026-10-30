@@ -17,7 +17,7 @@ TEXTURE_KEYS = ("all", "top", "side", "texture", "particle", "end", "bottom")
 
 # 改了解析逻辑（过滤规则、tint、取纹理的优先级、缓存里存 std）就 +1，
 # 让旧缓存失效。否则代码修好了、缓存还是旧结果，问题看起来"没修好"。
-CACHE_VERSION = 10
+CACHE_VERSION = 11
 
 # 这些方块的纹理是灰度图，游戏里按生物群系 tint 上色。
 # 不乘上 tint，草方块和树叶会变成灰色，体素配色直接废掉。
@@ -261,7 +261,7 @@ def _apply_tint(block_name: str, rgb: Tuple[int, int, int]) -> Tuple[int, int, i
 
 # 功能方块：是整方块，但纹理是器物图案（工作台、书架、熔炉…），
 # 拿来当体素会把整面墙变成杂乱图案。做纯色/材质色用，排除。
-# 黑名单**只装"物理上放不进墙里"的方块**。
+# 黑名单**只装"物理上放不进墙里"的方块**（放置后被游戏拒绝的那种）。
 #
 # 曾经这里塞了 60 多个：书架、工作台、熔炉、南瓜、炼药锅、活塞、信标、床……
 # 理由是"这些不是建材"。用户 2026-10-30 明确纠正：**只要能正常放置就不要挡**——
@@ -305,8 +305,25 @@ LIGHT_BLOCKS = frozenset({
 })
 
 
+def _changes_on_place(name: str) -> bool:
+    """放下去就**变成另一种方块**的，不能用。
+
+    这类和"能不能放"是两件事：方块放得下，但放完颜色/外观就不是它了。
+    目前唯一一类是**活珊瑚**——离开水立刻变死珊瑚，整块从粉/紫/黄/青变成灰绿，
+    等于选了个完全不同的颜色。而 `dead_*` 系列本来就是死的，放下去不会再变，保留。
+
+    加新条目之前先确认「放置后确实会变」，不能凭想象。
+    """
+    short = name.split(":", 1)[-1]
+    if "coral" not in short:
+        return False
+    return not short.startswith("dead_")
+
+
 def _is_building_block(name: str) -> bool:
     if name in NON_BUILDING_BLOCKS:
+        return False
+    if _changes_on_place(name):
         return False
     if name.endswith(NON_BUILDING_SUFFIXES):
         return False

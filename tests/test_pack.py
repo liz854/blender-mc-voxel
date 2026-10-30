@@ -276,10 +276,15 @@ def test_real_jar_parses():
                "minecraft:beacon", "minecraft:command_block"):
         assert ok in colors, f"{ok} 能正常放置，不该被剔掉"
 
-    # 树叶/珊瑚/釉面陶瓦也保留：颜色就是它们的真实颜色
-    for ok in ("minecraft:oak_leaves", "minecraft:tube_coral_block",
-               "minecraft:red_glazed_terracotta", "minecraft:sea_lantern"):
+    # 树叶/釉面陶瓦保留：颜色就是它们的真实颜色
+    for ok in ("minecraft:oak_leaves", "minecraft:red_glazed_terracotta",
+               "minecraft:sea_lantern", "minecraft:dead_tube_coral_block"):
         assert ok in colors, f"{ok} 不该被剔掉"
+
+    # 活珊瑚必须挡：离开水立刻变死珊瑚，整块从粉/紫/黄变成灰绿
+    for bad in ("minecraft:tube_coral_block", "minecraft:brain_coral_block",
+                "minecraft:fire_coral_block", "minecraft:horn_coral_block"):
+        assert bad not in colors, f"{bad} 放下去会变成死珊瑚，颜色就不对了"
 
     # 矿石/粗矿块保留：匹配准则就是"平均色最接近"
     for ok in ("minecraft:copper_ore", "minecraft:redstone_ore",
@@ -294,6 +299,32 @@ def test_real_jar_parses():
     r, g, b = colors["minecraft:grass_block"]
     assert g > r and g > b
     assert colors["minecraft:sand"][0] > 190  # 沙是浅色
+
+
+def test_live_coral_excluded_dead_kept():
+    """活珊瑚必须排除，死珊瑚必须保留。
+
+    这是"放得下但放完就不是它"的典型：活珊瑚离开水立刻变死珊瑚，
+    整块从粉/紫/黄/青变成灰绿——色差算得再准，摆出来也不是那个颜色。
+    dead_* 系列本来就是死的，放下去不会再变，颜色是真实的，保留。
+    """
+    for name in (
+        "minecraft:tube_coral_block",
+        "minecraft:brain_coral_block",
+        "minecraft:bubble_coral_block",
+        "minecraft:fire_coral_block",
+        "minecraft:horn_coral_block",
+        "minecraft:tube_coral",
+        "minecraft:tube_coral_fan",
+        "minecraft:tube_coral_wall_fan",
+    ):
+        assert not pack._is_building_block(name), f"{name} 离开水会变成死珊瑚"
+    for name in (
+        "minecraft:dead_tube_coral_block",
+        "minecraft:dead_brain_coral",
+        "minecraft:dead_tube_coral_fan",
+    ):
+        assert pack._is_building_block(name), f"{name} 本来就是死的，不该挡"
 
 
 def test_suffix_blacklist_is_empty():
@@ -311,8 +342,7 @@ def test_suffix_blacklist_is_empty():
         "minecraft:black_concrete_powder",
         "minecraft:infested_stone",
         "minecraft:red_glazed_terracotta",
-        "minecraft:tube_coral_block",
-        "minecraft:dead_brain_coral_block",
+        "minecraft:dead_brain_coral_block",  # 死的本来就不变
     ):
         assert pack._is_building_block(name), f"{name} 能正常放置，不该被挡"
     # 正常建材当然还在
