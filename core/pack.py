@@ -314,12 +314,19 @@ NON_BUILDING_BLOCKS |= {"minecraft:cactus"}
 # 拿这些方块当建材的问题：会发光（晚上整面墙发亮）、颜色偏小清新的青/粉/白，
 # 而且蛙鸣灯表面极平滑，特别容易被"浅色平滑面"的匹配选中——猴头脸部会被
 # 一整片 verdant_froglight 填满。所以默认关掉，需要做灯效时再打开。
+# 完整清单：Minecraft 里「自带光、放下就亮」的整方块。
+# 有些当前进不了色板（标注了原因），但列在这里，将来放开筛选阈值或黑名单时自动生效。
 LIGHT_BLOCKS = frozenset({
-    "minecraft:ochre_froglight",        # 蛙鸣灯·赭黄
-    "minecraft:pearlescent_froglight",  # 蛙鸣灯·珠光
-    "minecraft:verdant_froglight",      # 蛙鸣灯·青翠
-    "minecraft:shroomlight",            # 菌光体
-    "minecraft:crying_obsidian",        # 哭泣的黑曜石（光 10）
+    "minecraft:ochre_froglight",        # 蛙鸣灯·赭黄  光 15
+    "minecraft:pearlescent_froglight",  # 蛙鸣灯·珠光  光 15
+    "minecraft:verdant_froglight",      # 蛙鸣灯·青翠  光 15
+    "minecraft:shroomlight",            # 菌光体       光 15
+    "minecraft:sea_lantern",            # 海晶灯       光 15（std 47.9，当前被花纹阈值筛掉）
+    "minecraft:glowstone",              # 萤石         光 15（std 62.6，当前被花纹阈值筛掉）
+    "minecraft:jack_o_lantern",         # 南瓜灯       光 15（在器物黑名单里）
+    "minecraft:magma_block",            # 岩浆块       光 3 （在器物黑名单里）
+    "minecraft:beacon"                  # 信标         光 15（在机制方块黑名单里）
+    , "minecraft:crying_obsidian"       # 哭泣的黑曜石 光 10
 })
 
 

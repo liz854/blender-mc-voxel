@@ -171,10 +171,9 @@ class MCVoxelProps(bpy.types.PropertyGroup):
     )
     light_blocks: bpy.props.BoolProperty(
         name="允许照明方块",
-        description="打开后才会用蛙鸣灯、菌光体、哭泣的黑曜石这类「放下就亮」的方块。"
-        "默认关：它们会让整面墙在夜里发光，颜色还偏青/粉，而且蛙鸣灯表面极平滑，"
-        "特别容易被浅色平滑面选中",
-        default=False,
+        description="默认开启：允许用蛙鸣灯、菌光体、海晶灯这类「放下就亮」的方块。"
+        "关掉的话这些方块不参与匹配，颜色相近的位置会换成不发光的方块",
+        default=True,
     )
     max_kinds: bpy.props.IntProperty(
         name="方块种类上限",
