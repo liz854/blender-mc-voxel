@@ -81,6 +81,21 @@ def _get_palette(props) -> BlockPalette:
             + (f"；这些不在色板里：{', '.join(missing[:5])}" if missing else "")
         )
 
+    # 照明方块：默认不参与匹配。它们自带光（夜里整面墙发亮）、颜色偏青粉，
+    # 而且表面极平滑，特别容易被"浅色平滑面"选中——猴头脸部就是这么被
+    # verdant_froglight 填满的。
+    if not getattr(props, "light_blocks", False):
+        from ..core.pack import LIGHT_BLOCKS
+
+        extra = [n for n in LIGHT_BLOCKS if n in colors]
+        if extra:
+            deny = list(dict.fromkeys(list(deny) + extra))
+            print(
+                f"[mc_voxel] 已排除 {len(extra)} 种照明方块："
+                + ", ".join(n.split(":")[1] for n in sorted(extra))
+                + "（想用就在高级设置里打开「允许照明方块」）"
+            )
+
     if allow is None and not deny:
         return BlockPalette(colors, stds=stds)
 

@@ -94,6 +94,7 @@ class MCVOXEL_PT_advanced(bpy.types.Panel):
         col.label(text="效果", icon="MODIFIER")
         col.prop(props, "solid_fill")
         col.prop(props, "gravity_support")
+        col.prop(props, "light_blocks")
         col.prop(props, "max_kinds")
         col.prop(props, "noise")
         col.label(text="噪声：同色墙面混入次近方块，0 就是每次结果都一样", icon="BLANK1")

@@ -308,3 +308,27 @@ def test_leaves_filtered_from_real_palette(tmp_path):
     assert "minecraft:stone" in colors
     assert "minecraft:oak_leaves" not in colors
     assert "minecraft:red_concrete_powder" not in colors
+
+
+def test_cactus_is_not_a_building_block():
+    """仙人掌要求四周不能挨着别的方块，当体素放下去根本不成立。"""
+    from core.pack import _is_building_block
+
+    assert not _is_building_block("minecraft:cactus")
+
+
+def test_light_blocks_exclude_powered_ones():
+    """「自带光」的清单里不能混进需要充能的方块。
+
+    红石灯、铜灯泡要红石信号才亮，未充能时是暗的——把它们算作照明方块，
+    等于给用户一个颜色不对的方块。
+    """
+    from core.pack import LIGHT_BLOCKS
+
+    for name in ("minecraft:redstone_lamp", "minecraft:copper_bulb",
+                 "minecraft:waxed_copper_bulb", "minecraft:exposed_copper_bulb"):
+        assert name not in LIGHT_BLOCKS, f"{name} 需要充能，不该算照明方块"
+    # 真正自带光的必须在里面
+    for name in ("minecraft:ochre_froglight", "minecraft:verdant_froglight",
+                 "minecraft:pearlescent_froglight", "minecraft:shroomlight"):
+        assert name in LIGHT_BLOCKS

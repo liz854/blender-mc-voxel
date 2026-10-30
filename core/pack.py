@@ -17,7 +17,7 @@ TEXTURE_KEYS = ("all", "top", "side", "texture", "particle", "end", "bottom")
 
 # 改了解析逻辑（过滤规则、tint、取纹理的优先级、缓存里存 std）就 +1，
 # 让旧缓存失效。否则代码修好了、缓存还是旧结果，问题看起来"没修好"。
-CACHE_VERSION = 7
+CACHE_VERSION = 8
 
 # 这些方块的纹理是灰度图，游戏里按生物群系 tint 上色。
 # 不乘上 tint，草方块和树叶会变成灰色，体素配色直接废掉。
@@ -303,6 +303,24 @@ NON_BUILDING_SUFFIXES = (
     "_coral",
 )
 NON_BUILDING_PREFIXES = ("minecraft:infested_",)
+
+# 放置条件苛刻、当体素必然放不下的方块。目前只有仙人掌：
+# 它要求四周都不能挨着其他方块，埋在墙里根本放不下去（连试都不让试）。
+# 这类方块不能只靠"色差最小"选出来，会直接毁掉一段墙。
+NON_BUILDING_BLOCKS |= {"minecraft:cactus"}
+
+# 「自带光、放下就亮」的整方块。**不含需要充能的**（红石灯、铜灯泡要红石信号，
+# 未充能时是暗的，选它等于选了一个颜色不对的方块）。
+# 拿这些方块当建材的问题：会发光（晚上整面墙发亮）、颜色偏小清新的青/粉/白，
+# 而且蛙鸣灯表面极平滑，特别容易被"浅色平滑面"的匹配选中——猴头脸部会被
+# 一整片 verdant_froglight 填满。所以默认关掉，需要做灯效时再打开。
+LIGHT_BLOCKS = frozenset({
+    "minecraft:ochre_froglight",        # 蛙鸣灯·赭黄
+    "minecraft:pearlescent_froglight",  # 蛙鸣灯·珠光
+    "minecraft:verdant_froglight",      # 蛙鸣灯·青翠
+    "minecraft:shroomlight",            # 菌光体
+    "minecraft:crying_obsidian",        # 哭泣的黑曜石（光 10）
+})
 
 
 def _is_building_block(name: str) -> bool:

@@ -169,6 +169,13 @@ class MCVoxelProps(bpy.types.PropertyGroup):
         description="模型太大时按最长轴切成几段分别导出，每段独立体素化，峰值内存只按单段算",
         default=True,
     )
+    light_blocks: bpy.props.BoolProperty(
+        name="允许照明方块",
+        description="打开后才会用蛙鸣灯、菌光体、哭泣的黑曜石这类「放下就亮」的方块。"
+        "默认关：它们会让整面墙在夜里发光，颜色还偏青/粉，而且蛙鸣灯表面极平滑，"
+        "特别容易被浅色平滑面选中",
+        default=False,
+    )
     max_kinds: bpy.props.IntProperty(
         name="方块种类上限",
         description="超过时把用得最少的方块并到颜色最接近的保留方块。"
