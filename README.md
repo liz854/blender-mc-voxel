@@ -4,7 +4,7 @@
 
 ![Blender 里的小房子体素化后的等距预览](docs/images/house.png)
 
-> 状态：在 **Blender 5.2.2 LTS** 实机验收通过（57 项），`pytest` **220 项**全绿，导出结果在 **MC 26.3 + Fabric + Litematica 0.29.1** 游戏内 Load 成功。
+> 状态：在 **Blender 5.2.2 LTS** 实机验收通过（57 项），`pytest` **222 项**全绿，导出结果在 **MC 26.3 + Fabric + Litematica 0.29.1** 游戏内 Load 成功。
 
 ## 功能一览
 
@@ -48,7 +48,7 @@
 
 除 MC 版本需与客户端 jar 对应外，其余组件均为「该版本或更高即可」。
 
-上表所列组合已通过完整验收（`pytest` 220 项、端到端 19 项、Blender 真机验收）。其他版本组合尚未进行全量测试，使用前建议先以 `examples/05_bugtest.blend` 导出并在游戏内 Load，确认格式与方块映射正常。
+上表所列组合已通过完整验收（`pytest` 222 项、端到端 19 项、Blender 真机验收）。其他版本组合尚未进行全量测试，使用前建议先以 `examples/05_bugtest.blend` 导出并在游戏内 Load，确认格式与方块映射正常。
 
 ### 方式一：装发布包（普通用户）
 
@@ -369,7 +369,7 @@ house_x4of4.litematic
 不装 Blender 就能跑：
 
 ```bash
-python -m pytest -q          # 220 项，全绿
+python -m pytest -q          # 222 项，全绿
 python tools/verify.py       # 端到端 19 项检查，产物写到 dist/
 ```
 
@@ -384,6 +384,16 @@ blender.exe -b --python tools/blender_m1.py    # 57 项，全绿
 ```bash
 MC_JAR="<客户端 jar 路径>" python tools/verify.py
 ```
+
+想看色板里到底有哪些方块（改动筛选规则后逐项核对用）：
+
+```bash
+python tools/list_blocks.py    # 输出 dist/available_blocks.md
+```
+
+生成一份按字母序排的完整表格（ID / 英文名 / 平均色 / 类别），后面附
+「已排除清单」——黑名单、放下去会变形的、非整方块规则、照明方块开关状态，
+都在里面。数据直接读客户端 jar，和扩展实际用的一致。
 
 关键几条：
 
@@ -499,7 +509,7 @@ ui/                      面板、操作符、属性
   preview_render.py      等距预览图（Workbench 渲染，唯一在 ui 里碰渲染的）
 data/fallback_palette.json
 examples/                5 个示例场景
-tests/                   220 项
+tests/                   222 项
 docs/images/             README 用的图
 tools/
   _paths.py              工具脚本共用的路径解析（自动找 jar / schematics，别写死本机路径）
@@ -575,7 +585,7 @@ tools/
 
 ## 验证状态
 
-- `pytest` 220 项全绿（含 9 项 golden 回归、13 项资源包解析、10 项重力规则、8 项禁用方块、33 项限高与倍率换算、9 项白名单框增删与 jar 自动查找、11 项纹理感知匹配、11 项分块导出、3 项噪声、1 项方块种类上限、8 项黑名单与照明方块）
+- `pytest` 222 项全绿（含 9 项 golden 回归、13 项资源包解析、10 项重力规则、8 项禁用方块、33 项限高与倍率换算、9 项白名单框增删与 jar 自动查找、11 项纹理感知匹配、11 项分块导出、3 项噪声、1 项方块种类上限、8 项黑名单与照明方块）
 - `tools/verify.py` 19 项端到端
 - Blender 5.2.2 真机 57 项（`tools/blender_m1.py`：含禁用/白名单生效且不留空洞、预设、单位换算、限高拦截、倍率反算、等距预览图、平滑两开关、搜索添加/清空/回读明细、jar 自动查找）
 - 真样本双向对拍：读得进去，重编码逐位相同
