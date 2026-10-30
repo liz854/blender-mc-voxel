@@ -332,3 +332,40 @@ def test_light_blocks_exclude_powered_ones():
     for name in ("minecraft:ochre_froglight", "minecraft:verdant_froglight",
                  "minecraft:pearlescent_froglight", "minecraft:shroomlight"):
         assert name in LIGHT_BLOCKS
+
+
+def test_texture_std_filter_is_off_by_default():
+    """纹理标准差只用来比"平不平"，不能当筛子。
+
+    42 这个阈值曾经误伤 deepslate_diamond_ore(42.7)、nether_quartz_ore(48.4)、
+    birch_log(54.4)、sea_lantern(47.9)、glowstone(62.6)——矿石、常用建材、照明方块
+    全被挡；而真正该挡的机制方块 std 并不高，得靠黑名单。
+    """
+    import inspect
+
+    from core import pack
+
+    for fn in (pack._load_block_entries, pack.load_block_colors):
+        default = inspect.signature(fn).parameters["max_texture_std"].default
+        assert default is None, f"{fn.__name__} 的 max_texture_std 默认应该是 None"
+
+
+def test_mechanism_blocks_in_blacklist():
+    """不能当建材的方块靠黑名单挡，不靠纹理判断。"""
+    from core.pack import _is_building_block
+
+    for name in (
+        "minecraft:crafter",
+        "minecraft:structure_block",
+        "minecraft:test_block",
+        "minecraft:cactus",
+    ):
+        assert not _is_building_block(name), f"{name} 应该被排除"
+    # 这些必须留着
+    for name in (
+        "minecraft:birch_log",
+        "minecraft:sea_lantern",
+        "minecraft:glowstone",
+        "minecraft:deepslate_diamond_ore",
+    ):
+        assert _is_building_block(name), f"{name} 不该被排除"

@@ -17,7 +17,7 @@ TEXTURE_KEYS = ("all", "top", "side", "texture", "particle", "end", "bottom")
 
 # 改了解析逻辑（过滤规则、tint、取纹理的优先级、缓存里存 std）就 +1，
 # 让旧缓存失效。否则代码修好了、缓存还是旧结果，问题看起来"没修好"。
-CACHE_VERSION = 8
+CACHE_VERSION = 9
 
 # 这些方块的纹理是灰度图，游戏里按生物群系 tint 上色。
 # 不乘上 tint，草方块和树叶会变成灰色，体素配色直接废掉。
@@ -307,7 +307,13 @@ NON_BUILDING_PREFIXES = ("minecraft:infested_",)
 # 放置条件苛刻、当体素必然放不下的方块。目前只有仙人掌：
 # 它要求四周都不能挨着其他方块，埋在墙里根本放不下去（连试都不让试）。
 # 这类方块不能只靠"色差最小"选出来，会直接毁掉一段墙。
-NON_BUILDING_BLOCKS |= {"minecraft:cactus"}
+NON_BUILDING_BLOCKS |= {
+    "minecraft:cactus",         # 要求四周不能挨着其他方块，埋进墙里放不下去
+    "minecraft:crafter",        # 合成器：机制方块
+    "minecraft:structure_block",     # 结构方块
+    "minecraft:test_block",         # 测试方块
+    "minecraft:test_instance_block",
+}
 
 # 「自带光、放下就亮」的整方块。**不含需要充能的**（红石灯、铜灯泡要红石信号，
 # 未充能时是暗的，选它等于选了一个颜色不对的方块）。
@@ -345,15 +351,18 @@ def _load_block_entries(
     names=None,
     skip=("minecraft:air", "minecraft:cave_air", "minecraft:void_air"),
     full_cube_only: bool = True,
-    max_texture_std: float = 42.0,
+    max_texture_std=None,
 ) -> Dict[str, Tuple[Tuple[int, int, int], float]]:
     """从 jar / 资源包读出 {方块名: (平均色, 纹理标准差)}。
 
     full_cube_only=True 时只保留"整方块"（模型里有盖满 0..16 的方盒），
     排除台阶/门/栅栏/按钮等，否则体素可能被匹配成形状不对的方块。
 
-    max_texture_std 按纹理颜色标准差过滤"花纹理"方块（书架、工作台那种），
-    纯色方块 std 接近 0，石头这类有噪点的在 20-30 左右。
+    max_texture_std 默认不过滤（None）。**不要拿它当审美筛子**：
+    实测 42 这个阈值会挡掉 deepslate_diamond_ore(42.7)、nether_quartz_ore(48.4)、
+    birch_log(54.4)、sea_lantern(47.9)、glowstone(62.6)——矿石、白桦原木、照明方块
+    全被误伤，而真正不该用的（合成器、结构方块、测试方块）要靠黑名单挡，
+    它们的 std 并不高。std 的正确用途只有一个：纹理感知匹配时比"平不平"。
     """
     out: Dict[str, Tuple[Tuple[int, int, int], float]] = {}
     with ResourcePack(jar_path) as rp:
@@ -365,7 +374,7 @@ def _load_block_entries(
             if not stats:
                 continue
             rgb, std = stats
-            if std > max_texture_std:
+            if max_texture_std is not None and std > max_texture_std:
                 continue
             out[name] = (rgb, float(std))
     return out
@@ -376,7 +385,7 @@ def load_block_colors(
     names=None,
     skip=("minecraft:air", "minecraft:cave_air", "minecraft:void_air"),
     full_cube_only: bool = True,
-    max_texture_std: float = 42.0,
+    max_texture_std=None,
 ) -> Dict[str, Tuple[int, int, int]]:
     """从 jar / 资源包读出方块平均色表（不要纹理 std 的旧接口）。"""
     return {
