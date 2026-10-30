@@ -158,3 +158,25 @@ def test_noise_keeps_block_count():
     a = core_build.build_voxel_model(verts, tris, vc, 1.0, pal, noise=0)
     b = core_build.build_voxel_model(verts, tris, vc, 1.0, pal, noise=80)
     assert a.total_blocks == b.total_blocks == 216
+
+
+def test_max_kinds_limits_variety_without_losing_blocks():
+    """方块种类上限：种类被压下来，但方块总数一格不少。"""
+    # 六种灰阶色，配六个平均色各差一点的方块
+    colors = {
+        f"minecraft:g{i}": (100 + i * 8, 100 + i * 8, 100 + i * 8) for i in range(6)
+    }
+    pal = BlockPalette(colors)
+    verts, tris = box_mesh((0, 0, 0), (6, 6, 6))
+    # 顶点色按 x 分六档，保证六种色都会出现
+    vc = np.zeros((len(verts), 3))
+    for i, v in enumerate(verts):
+        band = int(min(max((v[0] + 0.0) // 1, 0), 5))
+        vc[i] = 100 + band * 8
+    plain = core_build.build_voxel_model(verts, tris, vc, 1.0, pal)
+    assert len({s.name for s in plain.palette if s.name != "minecraft:air"}) > 2
+
+    limited = core_build.build_voxel_model(verts, tris, vc, 1.0, pal, max_kinds=2)
+    kinds = {s.name for s in limited.palette if s.name != "minecraft:air"}
+    assert len(kinds) <= 2, f"应该压到 2 种以内，实际 {kinds}"
+    assert limited.total_blocks == plain.total_blocks, "种类变了但方块数不能变"

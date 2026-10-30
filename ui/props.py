@@ -34,8 +34,9 @@ class MCVoxelProps(bpy.types.PropertyGroup):
     )
     solid_fill: bpy.props.BoolProperty(
         name="实心填充",
-        description="关闭后只保留外壳",
-        default=True,
+        description="默认只出外壳（空心）。打开后会填满内部：Litematica 要渲染的方块成倍增加，"
+        "大模型容易卡；施工时也费材料。只有需要整体替换地形时才建议开",
+        default=False,
     )
     disable_blocks: bpy.props.StringProperty(
         name="禁用方块",
@@ -167,6 +168,14 @@ class MCVoxelProps(bpy.types.PropertyGroup):
         name="超上限自动分块",
         description="模型太大时按最长轴切成几段分别导出，每段独立体素化，峰值内存只按单段算",
         default=True,
+    )
+    max_kinds: bpy.props.IntProperty(
+        name="方块种类上限",
+        description="超过时把用得最少的方块并到颜色最接近的保留方块。"
+        "Litematica 每种方块单独建模型缓存，种类越多加载越慢；0 = 不限",
+        default=24,
+        min=0,
+        max=128,
     )
     noise: bpy.props.IntProperty(
         name="噪声",

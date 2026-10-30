@@ -239,6 +239,7 @@ def _prepare(context):
         "palette": _get_palette(props),
         "autofit": autofit,
         "noise": int(getattr(props, "noise", 0) or 0),
+        "max_kinds": int(getattr(props, "max_kinds", 0) or 0),
     }
 
 
@@ -274,6 +275,7 @@ def _build_from_st(st, context):
             solid=props.solid_fill,
             no_floating_gravity=getattr(props, "gravity_support", True),
             noise=st["noise"],
+            max_kinds=st["max_kinds"],
             progress=prog,
         )
     finally:
@@ -336,6 +338,7 @@ def _build_segments(st, origin, size, axis, parts, context):
                 seal_lo=i > 0,
                 seal_hi=i < len(segments) - 1,
                 noise=st["noise"],
+                max_kinds=st["max_kinds"],
                 progress=prog,
             )
             if model.total_blocks > props.max_blocks:
@@ -749,10 +752,12 @@ class MCVOXEL_OT_render_preview(bpy.types.Operator):
 
 
 # 预设：名字 -> (方块尺寸, 实心, 重力检查)
+# 三个预设都默认空心：实心会让 Litematica 要渲染的方块成倍增加，44k 方块就能卡住，
+# 而且施工时内部方块白费材料。真需要实心在面板「高级设置 → 效果」里手动开。
 PRESETS = {
-    "BUILDING": ("建筑", 1.0, True, True),
+    "BUILDING": ("建筑", 1.0, False, True),
     "PIXEL": ("像素画", 0.2, False, True),
-    "TERRAIN": ("地形", 4.0, True, True),
+    "TERRAIN": ("地形", 4.0, False, True),
 }
 
 

@@ -85,6 +85,59 @@ def _apply_seal(mask, axis, seal_lo: bool, seal_hi: bool):
     return out
 
 
+def _compact_palette(model, out):
+    """去掉调色板里没被用到的项（air 固定在索引 0），返回重映射后的 out。
+
+    只归并颜色还不够：那几种方块仍然留在 BlockStatePalette 里，Litematica 照样
+    要给每一项建模型缓存。必须把没用的项从调色板里删掉才算真省。
+    """
+    used = np.unique(out)
+    old = list(model.palette)
+    air_i = next((i for i, st in enumerate(old) if st.name == "minecraft:air"), None)
+    keep = [int(i) for i in used if i != air_i]
+    order = ([air_i] if air_i is not None else []) + keep
+    lut = np.zeros(len(old), dtype=np.int64)
+    for new_i, old_i in enumerate(order):
+        lut[old_i] = new_i
+    model.palette = [old[i] for i in order]
+    return lut[out]
+
+
+def _limit_kinds(model, palette, per_color, inverse, names_of, state_index, max_kinds):
+    """方块种类超限时，把用得最少的几种并到颜色最接近的保留方块上。
+
+    Litematica 给每种 BlockState 单独建模型缓存（日志里的
+    "BlockModelCacheSchematic: refreshing model cache"），种类越多加载越慢。
+    一个灰头盔选出 69 种灰阶方块毫无意义——压到 20 多种视觉上几乎看不出，
+    加载时间能差好几倍。
+
+    按体素数量排序保留，不是按唯一色数量：大面积的颜色才是主角。
+    """
+    idxs = np.array([state_index[n] for n in state_index], dtype=np.int64)
+    names = list(state_index.keys())
+    weights = np.bincount(inverse, minlength=len(per_color))
+    state_cnt = np.zeros(len(model.palette), dtype=np.int64)
+    np.add.at(state_cnt, per_color, weights)
+
+    order = np.argsort(-state_cnt[idxs], kind="stable")
+    keep_names = [names[i] for i in order[:max_kinds]]
+    drop_names = [names[i] for i in order[max_kinds:]]
+
+    lab_of = {n: palette.labs[i] for i, n in enumerate(palette.names)}
+    keep_labs = np.array([lab_of[n] for n in keep_names])
+    remap = np.arange(len(model.palette), dtype=np.int64)
+    for name in drop_names:
+        lab = lab_of[name]
+        j = int(np.argmin(np.linalg.norm(keep_labs - lab, axis=1)))
+        remap[state_index[name]] = state_index[keep_names[j]]
+
+    print(
+        f"[mc_voxel] 方块种类 {len(state_index)} 超过上限 {max_kinds}，"
+        f"并把 {len(drop_names)} 种归到最近的保留方块"
+    )
+    return remap[per_color]
+
+
 def build_voxel_model(
     verts,
     tris,
@@ -101,6 +154,7 @@ def build_voxel_model(
     seal_lo: bool = False,
     seal_hi: bool = False,
     noise: int = 0,
+    max_kinds: int = 0,
     max_voxels: int = 64_000_000,
 ) -> VoxelModel:
     """网格 -> VoxelModel。
@@ -116,6 +170,10 @@ def build_voxel_model(
     noise : 0-100。同一颜色区域里按这个百分比改用「次优」方块，用来打散
             大面积墙面的单调感。选谁由体素坐标哈希决定，同一模型每次结果
             一致，不会引入随机闪烁。
+    max_kinds : 方块种类上限（0 = 不限）。超过时把用得最少的方块并到颜色最接近的
+            保留方块上。Litematica 要为每种 BlockState 单独建模型缓存，种类越多
+            加载越慢——69 种灰阶方块能把一个头盔渲染到卡死，压到 20 多种几乎
+            看不出差别。
     seal_axis / seal_lo / seal_hi : 分块导出专用。沿 seal_axis 的 low / high
                   端面补一层"虚拟封盖"再做内部填充——分段后切面上没有表面，
                   实心模型会被 flood fill 判成空心。封盖只盖"该截面上模型
@@ -218,7 +276,15 @@ def build_voxel_model(
                 idx = model.add_state(BlockState(name))
                 state_index[name] = idx
             per_color[i] = idx
+
+        if max_kinds and max_kinds > 0 and len(state_index) > max_kinds:
+            per_color = _limit_kinds(
+                model, palette, per_color, inverse,
+                names_of=matched, state_index=state_index, max_kinds=int(max_kinds),
+            )
         out = per_color[inverse]
+        if max_kinds and max_kinds > 0 and len(state_index) > max_kinds:
+            out = _compact_palette(model, out)
 
     model.blocks[hit] = out
 

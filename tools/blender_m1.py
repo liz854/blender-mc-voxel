@@ -299,12 +299,19 @@ def main():
     )
     bpy.ops.mc_voxel.preset(preset="BUILDING")
     check(
-        "预设 建筑 -> 1.0 / 实心",
-        abs(props.block_size - 1.0) < 1e-6 and props.solid_fill,
+        "预设 建筑 -> 1.0 / 空心（默认只出外壳）",
+        abs(props.block_size - 1.0) < 1e-6 and not props.solid_fill,
         f"size={props.block_size} solid={props.solid_fill}",
     )
 
     # --- 7. 白名单（方案 Sprint 2 §5） ---
+    # 先在「同一状态、不加白名单」下导一次做基准。不能拿前面那次导出比：
+    # 那次是实心（1000 块），现在预设是空心，方块数本来就不同。
+    props.allow_blocks = ""
+    out_plain = os.path.join(tmp, "m1_plain.litematic")
+    bpy.ops.mc_voxel.export(filepath=out_plain)
+    plain_blocks = core_litematic.read_litematic(out_plain).total_blocks if os.path.exists(out_plain) else -1
+
     props.allow_blocks = "stone"
     out_allow = os.path.join(tmp, "m1_allow.litematic")
     r = bpy.ops.mc_voxel.export(filepath=out_allow)
@@ -318,8 +325,8 @@ def main():
         )
         check(
             "白名单后方块数不变（不留空洞）",
-            back_allow.total_blocks == 1000,
-            f"blocks={back_allow.total_blocks}",
+            back_allow.total_blocks == plain_blocks and plain_blocks > 0,
+            f"白名单 {back_allow.total_blocks} vs 未过滤 {plain_blocks}",
         )
     else:
         check("白名单导出", False, str(r))
