@@ -143,8 +143,7 @@ class MCVoxelProps(bpy.types.PropertyGroup):
         name="格式",
         items=[
             ("LITEMATIC", ".litematic（Litematica 投影）", "主力格式"),
-            ("SCHEM", ".schem（WorldEdit）", "WorldEdit 用"),
-            ("STRUCTURE", "结构方块 .nbt", "上限 48³"),
+            ("SCHEM", ".schem（WorldEdit）", "WorldEdit / Litematica 也能读"),
         ],
         default="LITEMATIC",
     )

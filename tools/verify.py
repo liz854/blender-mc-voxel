@@ -138,14 +138,6 @@ def main():
     core_schem.write_schem(sphere, path_schem, dv)
     check("写出 .schem", os.path.exists(path_schem), f"{os.path.getsize(path_schem)} 字节")
 
-    small = VoxelModel((4, 4, 4))
-    small.fill_from(np.ones((4, 4, 4), dtype=bool), BlockState("minecraft:stone"))
-    path_nbt = os.path.join(OUT, "demo_cube.nbt")
-    from core.structure import write_structure_nbt
-
-    write_structure_nbt(small, path_nbt, dv)
-    check("写出结构方块 .nbt", os.path.exists(path_nbt))
-
     print("== 3. 反向读回一致性 ==")
     back_lm = core_litematic.read_litematic(path_lm)
     compare_models(sphere, back_lm, ".litematic 读回逐块一致")
@@ -154,7 +146,9 @@ def main():
     compare_models(sphere, back_sc, ".schem 读回逐块一致")
 
     print("== 4. 网格反向导出 ==")
-    v, q, _ = mesh_export.model_to_mesh(small.model if False else small)
+    cube = VoxelModel((4, 4, 4))
+    cube.fill_from(np.ones((4, 4, 4), dtype=bool), BlockState("minecraft:stone"))
+    v, q, _ = mesh_export.model_to_mesh(cube)
     check("方块模型导出网格", len(q) == 6 * 16, f"{len(q)} 个面")
     check("法线朝外", mesh_export.check_outward(v, q))
 

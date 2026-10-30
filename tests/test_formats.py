@@ -3,7 +3,6 @@ import pytest
 
 from core.ir import BlockState, VoxelModel
 from core.schem import read_schem, read_varint, write_schem, write_varint
-from core.structure import StructureTooBig, write_structure_nbt
 
 
 def test_varint_roundtrip():
@@ -54,20 +53,3 @@ def test_schem_has_required_fields(tmp_path):
     assert "minecraft:stone" in root["Palette"]
 
 
-def test_structure_writes(tmp_path):
-    from core import nbt
-
-    m = VoxelModel((2, 2, 2))
-    m.fill_from(np.ones((2, 2, 2), dtype=bool), BlockState("minecraft:stone"))
-    path = tmp_path / "s.nbt"
-    write_structure_nbt(m, str(path), 4325)
-    root = nbt.read_nbt(str(path))
-    assert list(root["size"]) == [2, 2, 2]
-    assert len(root["blocks"]) == 8
-    assert root["blocks"][0]["pos"][0] in (0, 1)
-
-
-def test_structure_too_big(tmp_path):
-    m = VoxelModel((49, 1, 1))
-    with pytest.raises(StructureTooBig):
-        write_structure_nbt(m, str(tmp_path / "big.nbt"), 4325)

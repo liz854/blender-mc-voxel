@@ -1,6 +1,6 @@
 # Blender MC Voxel
 
-**把 Blender 模型一键体素化成 Minecraft 建筑。** 主力导出 `.litematic`（Litematica 投影），顺带支持 WorldEdit 的 `.schem` 和结构方块 `.nbt`。配色不是拍脑袋的色表，而是直接读你客户端 jar 里的真实方块平均色。
+**把 Blender 模型一键体素化成 Minecraft 建筑。** 主力导出 `.litematic`（Litematica 投影），顺带支持 WorldEdit 的 `.schem`。配色不是拍脑袋的色表，而是直接读你客户端 jar 里的真实方块平均色。
 
 ![Blender 里的小房子体素化后的等距预览](docs/images/house.png)
 
@@ -11,7 +11,7 @@
 | 能力 | 说明 |
 |---|---|
 | **体素化** | 三角形-体素 16 轴 SAT，斜面和尖角不糊；按覆盖尺寸分组批量算，4000+ 三角形的模型秒级出结果 |
-| **三种导出格式** | `.litematic`（Litematica，主力）/ `.schem`（WorldEdit、FAWE）/ `.nbt`（结构方块，≤48³） |
+| **两种投影格式** | `.litematic`（Litematica，主力）/ `.schem`（WorldEdit、FAWE、Litematica 也能读） |
 | **真实方块配色** | 直接读客户端 jar：1288 个 blockstate → 筛出 **300 种**能当建材的整方块，按 CIE Lab ΔE76 最近邻匹配 |
 | **纹理感知匹配** | 平涂的面配平纹理方块、有噪点的面配有噪点的方块，光面上不会突然冒出矿石斑点 |
 | **尺寸控制** | 直接给方块尺寸（1 体素 = N 米），或反过来「我要它高 200 格」自动反算倍率 |
@@ -204,8 +204,6 @@ MC 有世界高度上限，**超出的方块 Litematica 摆投影时会静默跳
 
 面板「维度」下面实时显示当前维度的 y 范围和地面以上可用格数。用改高度的整合包时可以把「严格限高」关掉，关掉只告警不拦。
 
-> 结构方块 `.nbt` 的文件格式本身不限高，但游戏里结构方块界面最大只能填 48，超了会填不进去（Console 会提示）。
-
 ### MC 朝向
 
 面板「导出」区直接标着 **+X 东、+Y 北、+Z 上**（Blender 坐标 → Minecraft 朝向）。
@@ -393,7 +391,6 @@ core/                    除 mesh_data.py 外不 import bpy，可脱离 Blender 
   nbt.py                 NBT 读写（大端、modified UTF-8、gzip）
   litematic.py           ★ 导出 / 读回（读回只为回归对拍，面板不再提供导入）
   schem.py               Sponge v2
-  structure.py           结构方块 .nbt（≤48³）
   build.py               网格 → VoxelModel 流水线（含内存守卫）
   tiles.py               分块导出：切几段、段边界对齐、截面封盖
   limits.py              世界限高：维度 y 范围（从 jar 的 dimension_type 读）
@@ -453,7 +450,6 @@ tools/
 - 不烘焙光照，只取材质基色。MC 引擎自己会打光
 - 只输出整方块，不出半砖（半砖的 `BlockState.props` 已经能带，缺的是正向输出）
 - TileEntities 为空，箱子和告示牌内容不保留
-- 结构方块 `.nbt` 有 48 边限制，超出请用 `.litematic`
 - 预览图是等距单视角，不给多角度/动画
 - 模型没有顶点色也没贴图时会全白（Suzanne 这种要先涂顶点色，见 `tools/blender_suzanne.py`）
 - 512³ 受稠密网格内存限制，会被守卫拦下（见「性能」）

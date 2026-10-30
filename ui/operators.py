@@ -11,7 +11,7 @@ from bpy_extras.io_utils import ExportHelper
 from ..core import build as core_build
 from ..core import limits
 from ..core import litematic as core_litematic
-from ..core import mcver, mesh_data, schem as core_schem, structure as core_structure
+from ..core import mcver, mesh_data, schem as core_schem
 from ..core import tiles as core_tiles
 from ..core.ir import VoxelModel
 from ..core.palette import BlockPalette, load_fallback_palette, parse_block_filter
@@ -360,10 +360,8 @@ def _write_model(path, model, fmt, props, data_version):
             name=os.path.splitext(os.path.basename(path))[0],
             author=props.author or "mc_voxel_export",
         )
-    elif fmt == "SCHEM":
-        core_schem.write_schem(model, path, data_version)
     else:
-        core_structure.write_structure_nbt(model, path, data_version)
+        core_schem.write_schem(model, path, data_version)
 
 
 def _notify(title, lines, icon="FILE_TICK"):
@@ -543,12 +541,6 @@ class MCVOXEL_OT_export(bpy.types.Operator, ExportHelper):
                 warn = hrep.message if hrep.level == "warn" else ""
                 if warn:
                     lines.append(warn)
-                if fmt == "STRUCTURE" and max(model.size) > 48:
-                    warn = (
-                        f"结构方块界面最大只能填 48，当前 {max(model.size)} 会填不进去"
-                    )
-                    lines.append(warn)
-                    print(f"[mc_voxel] {warn}")
         except Exception as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
@@ -601,9 +593,7 @@ class MCVOXEL_OT_export_all(bpy.types.Operator):
             self.report({"ERROR"}, "场景里没有网格物体")
             return {"CANCELLED"}
 
-        ext = {"LITEMATIC": ".litematic", "SCHEM": ".schem"}.get(
-            props.export_format, ".nbt"
-        )
+        ext = ".schem" if props.export_format == "SCHEM" else ".litematic"
         prev_active = context.view_layer.objects.active if context.view_layer else None
         done, failed, total_blocks = [], [], 0
         for obj in meshes:
