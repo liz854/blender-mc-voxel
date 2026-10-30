@@ -1,17 +1,17 @@
 # Blender MC Voxel
 
-**把 Blender 模型一键体素化成 Minecraft 建筑。** 主力导出 `.litematic`（Litematica 投影），顺带支持 WorldEdit 的 `.schem`。配色不是拍脑袋的色表，而是直接读你客户端 jar 里的真实方块平均色。
+**把 Blender 模型一键体素化成 Minecraft 建筑。** 只导出 `.litematic`（Litematica 投影）一种格式。配色不是拍脑袋的色表，而是直接读你客户端 jar 里的真实方块平均色。
 
 ![Blender 里的小房子体素化后的等距预览](docs/images/house.png)
 
-> 状态：在 **Blender 5.2.2 LTS** 实机验收通过（57 项），`pytest` **221 项**全绿，导出结果在 **MC 26.3 + Fabric + Litematica 0.29.1** 游戏内 Load 成功。
+> 状态：在 **Blender 5.2.2 LTS** 实机验收通过（57 项），`pytest` **215 项**全绿，导出结果在 **MC 26.3 + Fabric + Litematica 0.29.1** 游戏内 Load 成功。
 
 ## 功能一览
 
 | 能力 | 说明 |
 |---|---|
 | **体素化** | 三角形-体素 16 轴 SAT，斜面和尖角不糊；按覆盖尺寸分组批量算，4000+ 三角形的模型秒级出结果 |
-| **两种投影格式** | `.litematic`（Litematica，主力）/ `.schem`（WorldEdit、FAWE、Litematica 也能读） |
+| **导出 .litematic** | Litematica 投影，游戏里按 `M` → Load Schematic 直接用；多 region、带元数据 |
 | **真实方块配色** | 直接读客户端 jar：1288 个 blockstate → 筛出 **300 种**能当建材的整方块，按 CIE Lab ΔE76 最近邻匹配 |
 | **纹理感知匹配** | 平涂的面配平纹理方块、有噪点的面配有噪点的方块，光面上不会突然冒出矿石斑点 |
 | **尺寸控制** | 直接给方块尺寸（1 体素 = N 米），或反过来「我要它高 200 格」自动反算倍率 |
@@ -46,7 +46,7 @@
 
 除 MC 版本需与客户端 jar 对应外，其余组件均为「该版本或更高即可」。
 
-上表所列组合已通过完整验收（`pytest` 221 项、端到端 22 项、Blender 真机验收）。其他版本组合尚未进行全量测试，使用前建议先以 `examples/05_bugtest.blend` 导出并在游戏内 Load，确认格式与方块映射正常。
+上表所列组合已通过完整验收（`pytest` 215 项、端到端 19 项、Blender 真机验收）。其他版本组合尚未进行全量测试，使用前建议先以 `examples/05_bugtest.blend` 导出并在游戏内 Load，确认格式与方块映射正常。
 
 ### 方式一：装发布包（普通用户）
 
@@ -86,15 +86,28 @@ blender.exe --command extension install-file -r user_default -e dist/mc_voxel_ex
 
 ## 快速上手
 
-1. 选中网格物体（没有顶点色会全白，先涂色或看 `examples/`）
-2. 点 **建筑 / 像素画 / 地形** 套预设，或自己调 **方块尺寸**（1 体素 = N 米）。10×10×10 的立方体配 1.0 → 1000 个方块
-   也可以反过来：选 **高 / 长 / 宽** 某一轴，填 **目标格数**，点 **定倍率** 让扩展自己算（见下）
-3. 选 **游戏版本**（默认 26.3），DataVersion 自动取表里的值；填了 **客户端 jar** 路径就以 jar 为准（同时用来取方块真实颜色）。jar 留空时会自动去常见启动器目录里找（官方 / PCL / HMCL / BakaXL，认 `versions/<版本>/<版本>.jar` 这种标准布局，整合包里的杂 jar 不会被误选），实在找不到才用兜底 96 色
-4. 需要排除某些方块填 **禁用方块**，只想用某几种填 **只用这些方块**（见下）
-5. 点 **体素化** 看统计，点 **预览方块** 生成方块预览
-6. 点 **导出投影** 选格式落盘
+面板只放常用的东西，四步出结果：
+
+1. **选中网格物体**（没有顶点色会全白，先涂色或看 `examples/`）
+2. 点 **建筑 / 像素画 / 地形** 套预设。不满意就直接拖 **方块尺寸**（1 格 = N 米）：
+   10×10×10 的立方体配 1.0 → 1000 个方块
+   想按尺寸反着来也行——选 **高 / 长 / 宽** 某一轴，填 **目标格数**，点 **定倍率**
+3. 点 **导出投影（.litematic）**
+4. 面板底部出现「上次导出」，点 **打开所在文件夹** 直接定位到文件
+
+> 只想看看会变成什么样，点 **只看统计** 或 **方块预览**，不落盘。
+
+**色板、世界限高、分块、噪声、作者、预览图设置全在下面折叠的「高级设置」里**，第一次用完全不用碰——
+客户端 jar 会自动找，游戏版本默认 26.3，导出的 DataVersion 直接对得上。
 
 导出后把 `.litematic` 丢进 `.minecraft/schematics/`，游戏里按 `M` → Load Schematic。
+
+### 面板长什么样
+
+| 位置 | 放什么 |
+|---|---|
+| **台面上**（主面板） | 选中提示、三个预设、方块尺寸、定倍率、导出 / 只看统计 / 方块预览、上次导出回读 |
+| **高级设置**（默认折叠） | 实心填充、重力方块、噪声、维度与限高、客户端 jar、游戏版本、DataVersion、只用/禁用方块、自动分块、方块上限、区域大小、作者、批量导出、预览图 |
 
 ### 预设
 
@@ -272,8 +285,8 @@ house_x4of4.litematic
 不装 Blender 就能跑：
 
 ```bash
-python -m pytest -q          # 221 项，全绿
-python tools/verify.py       # 端到端 22 项检查，产物写到 dist/
+python -m pytest -q          # 215 项，全绿
+python tools/verify.py       # 端到端 19 项检查，产物写到 dist/
 ```
 
 装了 Blender 再加一条真机：
@@ -296,7 +309,7 @@ MC_JAR="<客户端 jar 路径>" python tools/verify.py
 - 去掉一面的盒子 → 内部空心，填充不进去
 - 2×2×2 全 stone → `RegionCount=1, TotalBlocks=8, palette 长度=2, BlockStates 长度=1`
 - 非立方体尺寸（5×2×3）每块位置原位还原
-- `.litematic` 与 `.schem` 读回逐块一致
+- `.litematic` 读回逐块一致
 - 禁用 / 白名单后 `TotalBlocks` 不变，只是颜色换人
 - 悬空沙柱整根替换，托着的沙子一格不动
 - 物体放大 2 倍 → 8000 方块；`scale_length=2.0` → 同样翻倍
@@ -390,7 +403,6 @@ core/                    除 mesh_data.py 外不 import bpy，可脱离 Blender 
   palette.py             32³ Lab LUT（纹理 4 档各一张）+ 白名单/禁用 + 纹理感知匹配
   nbt.py                 NBT 读写（大端、modified UTF-8、gzip）
   litematic.py           ★ 导出 / 读回（读回只为回归对拍，面板不再提供导入）
-  schem.py               Sponge v2
   build.py               网格 → VoxelModel 流水线（含内存守卫）
   tiles.py               分块导出：切几段、段边界对齐、截面封盖
   limits.py              世界限高：维度 y 范围（从 jar 的 dimension_type 读）
@@ -403,7 +415,7 @@ ui/                      面板、操作符、属性
   preview_render.py      等距预览图（Workbench 渲染，唯一在 ui 里碰渲染的）
 data/fallback_palette.json
 examples/                5 个示例场景
-tests/                   221 项
+tests/                   215 项
 docs/images/             README 用的图
 tools/
   _paths.py              工具脚本共用的路径解析（自动找 jar / schematics，别写死本机路径）
@@ -479,8 +491,8 @@ tools/
 
 ## 验证状态
 
-- `pytest` 221 项全绿（含 9 项 golden 回归、13 项资源包解析、10 项重力规则、8 项禁用方块、33 项限高与倍率换算、9 项白名单框增删与 jar 自动查找、11 项纹理感知匹配、11 项分块导出、3 项噪声）
-- `tools/verify.py` 22 项端到端
+- `pytest` 215 项全绿（含 9 项 golden 回归、13 项资源包解析、10 项重力规则、8 项禁用方块、33 项限高与倍率换算、9 项白名单框增删与 jar 自动查找、11 项纹理感知匹配、11 项分块导出、3 项噪声）
+- `tools/verify.py` 19 项端到端
 - Blender 5.2.2 真机 57 项（`tools/blender_m1.py`：含禁用/白名单生效且不留空洞、预设、单位换算、限高拦截、倍率反算、等距预览图、平滑两开关、搜索添加/清空/回读明细、jar 自动查找）
 - 真样本双向对拍：读得进去，重编码逐位相同
 - **游戏内实装已确认**（MC 26.3 + Fabric + Litematica 0.29.1）：16×16×16 空心盒装进 `.minecraft/schematics/`，游戏里 Load 出来形状、空心、开口位置、三色分层都对

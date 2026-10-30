@@ -139,14 +139,6 @@ class MCVoxelProps(bpy.types.PropertyGroup):
         subtype="FILE_PATH",
         default="",
     )
-    export_format: bpy.props.EnumProperty(
-        name="格式",
-        items=[
-            ("LITEMATIC", ".litematic（Litematica 投影）", "主力格式"),
-            ("SCHEM", ".schem（WorldEdit）", "WorldEdit / Litematica 也能读"),
-        ],
-        default="LITEMATIC",
-    )
     output_path: bpy.props.StringProperty(
         name="输出",
         subtype="FILE_PATH",

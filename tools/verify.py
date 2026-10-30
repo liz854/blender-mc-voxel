@@ -18,7 +18,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core import build as core_build
 from core import litematic as core_litematic
 from core import mesh_export
-from core import schem as core_schem
 from core.ir import BlockState, VoxelModel
 from core.palette import BlockPalette, load_fallback_palette
 
@@ -134,16 +133,9 @@ def main():
     core_litematic.write_litematic(sphere, path_lm, mc_data_version=dv, name="demo_sphere")
     check("写出 .litematic", os.path.exists(path_lm), f"{os.path.getsize(path_lm)} 字节")
 
-    path_schem = os.path.join(OUT, "demo_sphere.schem")
-    core_schem.write_schem(sphere, path_schem, dv)
-    check("写出 .schem", os.path.exists(path_schem), f"{os.path.getsize(path_schem)} 字节")
-
     print("== 3. 反向读回一致性 ==")
     back_lm = core_litematic.read_litematic(path_lm)
     compare_models(sphere, back_lm, ".litematic 读回逐块一致")
-
-    back_sc = core_schem.read_schem(path_schem)
-    compare_models(sphere, back_sc, ".schem 读回逐块一致")
 
     print("== 4. 网格反向导出 ==")
     cube = VoxelModel((4, 4, 4))

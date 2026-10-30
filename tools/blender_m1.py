@@ -252,7 +252,6 @@ def main():
     props.mc_release = "26.3"
     props.mc_data_version = 0  # 0 = 自动（jar 优先，其次版本表）
     props.jar_path = ""
-    props.export_format = "LITEMATIC"
 
     found_jar = mcver.find_client_jar()
     r = bpy.ops.mc_voxel.export(filepath=out)

@@ -11,7 +11,7 @@ from bpy_extras.io_utils import ExportHelper
 from ..core import build as core_build
 from ..core import limits
 from ..core import litematic as core_litematic
-from ..core import mcver, mesh_data, schem as core_schem
+from ..core import mcver, mesh_data
 from ..core import tiles as core_tiles
 from ..core.ir import VoxelModel
 from ..core.palette import BlockPalette, load_fallback_palette, parse_block_filter
@@ -349,19 +349,16 @@ def _build_segments(st, origin, size, axis, parts, context):
     return models
 
 
-def _write_model(path, model, fmt, props, data_version):
-    """按格式落盘（单段 / 分块共用）。"""
-    if fmt == "LITEMATIC":
-        core_litematic.write_litematic(
-            model,
-            path,
-            mc_data_version=data_version,
-            region_size=props.region_size,
-            name=os.path.splitext(os.path.basename(path))[0],
-            author=props.author or "mc_voxel_export",
-        )
-    else:
-        core_schem.write_schem(model, path, data_version)
+def _write_model(path, model, props, data_version):
+    """写出 .litematic（单段 / 分块 / 批量共用）。"""
+    core_litematic.write_litematic(
+        model,
+        path,
+        mc_data_version=data_version,
+        region_size=props.region_size,
+        name=os.path.splitext(os.path.basename(path))[0],
+        author=props.author or "mc_voxel_export",
+    )
 
 
 def _notify(title, lines, icon="FILE_TICK"):
@@ -485,7 +482,7 @@ class MCVOXEL_OT_export(bpy.types.Operator, ExportHelper):
     bl_options = {"REGISTER"}
 
     filename_ext = ".litematic"
-    filter_glob: bpy.props.StringProperty(default="*.litematic;*.schem;*.nbt", options={"HIDDEN"})
+    filter_glob: bpy.props.StringProperty(default="*.litematic", options={"HIDDEN"})
 
     def execute(self, context):
         props = _scene(context).mc_voxel
@@ -502,7 +499,6 @@ class MCVOXEL_OT_export(bpy.types.Operator, ExportHelper):
                 return {"CANCELLED"}
 
         path = bpy.path.abspath(self.filepath)
-        fmt = props.export_format
 
         try:
             st = _prepare(context)
@@ -518,7 +514,7 @@ class MCVOXEL_OT_export(bpy.types.Operator, ExportHelper):
                 names = []
                 for i, model in enumerate(models):
                     seg_path = stem + core_tiles.part_suffix(axis, i, parts) + (ext or "")
-                    _write_model(seg_path, model, fmt, props, data_version)
+                    _write_model(seg_path, model, props, data_version)
                     names.append(os.path.basename(seg_path))
                 total = sum(m.total_blocks for m in models)
                 note = f"分 {parts} 段 · 共 {total:,} 方块"
@@ -532,7 +528,7 @@ class MCVOXEL_OT_export(bpy.types.Operator, ExportHelper):
                 warn = ""
             else:
                 model, hrep = _build_from_st(st, context)
-                _write_model(path, model, fmt, props, data_version)
+                _write_model(path, model, props, data_version)
                 dims = "×".join(map(str, model.size))
                 note = f"{os.path.basename(path)} · {model.total_blocks:,} 方块 · {dims} 格"
                 lines = [f"已写出 {os.path.basename(path)}", f"{model.total_blocks:,} 方块 · {dims} 格"]
@@ -593,7 +589,7 @@ class MCVOXEL_OT_export_all(bpy.types.Operator):
             self.report({"ERROR"}, "场景里没有网格物体")
             return {"CANCELLED"}
 
-        ext = ".schem" if props.export_format == "SCHEM" else ".litematic"
+        ext = ".litematic"
         prev_active = context.view_layer.objects.active if context.view_layer else None
         done, failed, total_blocks = [], [], 0
         for obj in meshes:
@@ -611,12 +607,12 @@ class MCVOXEL_OT_export_all(bpy.types.Operator):
                     stem = os.path.splitext(base)[0]
                     for i, m in enumerate(models):
                         seg = stem + core_tiles.part_suffix(axis, i, parts) + ext
-                        _write_model(seg, m, props.export_format, props, data_version)
+                        _write_model(seg, m, props, data_version)
                         total_blocks += m.total_blocks
                     done.append(f"{obj.name}（{parts} 段）")
                 else:
                     model, _hrep = _build_from_st(st, context)
-                    _write_model(base, model, props.export_format, props, data_version)
+                    _write_model(base, model, props, data_version)
                     total_blocks += model.total_blocks
                     done.append(f"{obj.name}（{model.total_blocks:,} 方块）")
             except Exception as exc:  # 单个物体失败不打断整批
