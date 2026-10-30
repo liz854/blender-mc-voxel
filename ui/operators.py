@@ -751,13 +751,18 @@ class MCVOXEL_OT_render_preview(bpy.types.Operator):
         return {"FINISHED"}
 
 
-# 预设：名字 -> (方块尺寸, 实心, 重力检查)
+# 预设：名字 -> (显示名, 方块尺寸, 实心, 重力检查, 方块种类上限)
 # 三个预设都默认空心：实心会让 Litematica 要渲染的方块成倍增加，44k 方块就能卡住，
 # 而且施工时内部方块白费材料。真需要实心在面板「高级设置 → 效果」里手动开。
+#
+# 种类上限按用途给不同的默认值，面板上随时能改：
+#   建筑 24  —— 墙面和屋顶讲究材质层次，太少了会糊成一片
+#   像素画 48 —— 颜色本身就是内容，压狠了就失真
+#   地形 12   —— 大范围地貌看的是大色块，几十种反而显得脏，也最省 Litematica 的加载
 PRESETS = {
-    "BUILDING": ("建筑", 1.0, False, True),
-    "PIXEL": ("像素画", 0.2, False, True),
-    "TERRAIN": ("地形", 4.0, False, True),
+    "BUILDING": ("建筑", 1.0, False, True, 24),
+    "PIXEL": ("像素画", 0.2, False, True, 48),
+    "TERRAIN": ("地形", 4.0, False, True, 12),
 }
 
 
@@ -769,16 +774,24 @@ class MCVOXEL_OT_preset(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     preset: bpy.props.EnumProperty(
-        items=[(k, v[0], f"方块尺寸 {v[1]}") for k, v in PRESETS.items()]
+        items=[
+            (k, v[0], f"方块尺寸 {v[1]}，最多 {v[4]} 种方块")
+            for k, v in PRESETS.items()
+        ]
     )
 
     def execute(self, context):
         props = _scene(context).mc_voxel
-        name, size, solid, gravity = PRESETS[self.preset]
+        name, size, solid, gravity, kinds = PRESETS[self.preset]
         props.block_size = size
         props.solid_fill = solid
         props.gravity_support = gravity
-        self.report({"INFO"}, f"{name}预设：方块尺寸 {size}，{'实心' if solid else '只留外壳'}")
+        props.max_kinds = kinds
+        self.report(
+            {"INFO"},
+            f"{name}预设：方块尺寸 {size}，{'实心' if solid else '只留外壳'}，"
+            f"方块最多 {kinds} 种（可在高级设置里改）",
+        )
         return {"FINISHED"}
 
 

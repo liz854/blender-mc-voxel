@@ -299,10 +299,25 @@ def main():
     )
     bpy.ops.mc_voxel.preset(preset="BUILDING")
     check(
-        "预设 建筑 -> 1.0 / 空心（默认只出外壳）",
-        abs(props.block_size - 1.0) < 1e-6 and not props.solid_fill,
-        f"size={props.block_size} solid={props.solid_fill}",
+        "预设 建筑 -> 1.0 / 空心 / 24 种方块",
+        abs(props.block_size - 1.0) < 1e-6
+        and not props.solid_fill
+        and props.max_kinds == 24,
+        f"size={props.block_size} solid={props.solid_fill} kinds={props.max_kinds}",
     )
+    bpy.ops.mc_voxel.preset(preset="PIXEL")
+    check(
+        "预设 像素画 -> 0.2 / 48 种方块",
+        abs(props.block_size - 0.2) < 1e-6 and props.max_kinds == 48,
+        f"size={props.block_size} kinds={props.max_kinds}",
+    )
+    bpy.ops.mc_voxel.preset(preset="TERRAIN")
+    check(
+        "预设 地形 -> 4.0 / 12 种方块",
+        abs(props.block_size - 4.0) < 1e-6 and props.max_kinds == 12,
+        f"size={props.block_size} kinds={props.max_kinds}",
+    )
+    bpy.ops.mc_voxel.preset(preset="BUILDING")  # 回到建筑，后面的用例按 1.0 走
 
     # --- 7. 白名单（方案 Sprint 2 §5） ---
     # 先在「同一状态、不加白名单」下导一次做基准。不能拿前面那次导出比：
