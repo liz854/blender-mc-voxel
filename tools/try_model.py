@@ -173,7 +173,10 @@ def main():
     cells = int(argv[2]) if len(argv) > 2 else 64
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    bpy.ops.import_scene.gltf(filepath=model_path)
+    if model_path.lower().endswith(".blend"):
+        bpy.ops.wm.open_mainfile(filepath=model_path)
+    else:
+        bpy.ops.import_scene.gltf(filepath=model_path)
     meshes = [o for o in bpy.data.objects if o.type == "MESH"]
     print(f"[try] 导入 {len(meshes)} 个网格：{name}")
     for o in meshes:
