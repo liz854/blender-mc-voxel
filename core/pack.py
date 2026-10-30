@@ -17,7 +17,7 @@ TEXTURE_KEYS = ("all", "top", "side", "texture", "particle", "end", "bottom")
 
 # 改了解析逻辑（过滤规则、tint、取纹理的优先级、缓存里存 std）就 +1，
 # 让旧缓存失效。否则代码修好了、缓存还是旧结果，问题看起来"没修好"。
-CACHE_VERSION = 12
+CACHE_VERSION = 13
 
 # 这些方块的纹理是灰度图，游戏里按生物群系 tint 上色。
 # 不乘上 tint，草方块和树叶会变成灰色，体素配色直接废掉。
@@ -287,6 +287,9 @@ NON_BUILDING_BLOCKS = {
     "minecraft:bedrock",                  # 基岩：放下去拆不掉
     "minecraft:test_block",               # 测试方块 / 测试实例方块
     "minecraft:test_instance_block",
+    "minecraft:sculk_catalyst",           # 幽匿催发体：会扩散幽匿、召出监守者
+    "minecraft:suspicious_sand",          # 可疑的沙子：里面有考古物品，刷掉就掉
+    "minecraft:suspicious_gravel",        # 可疑的沙砾
 
     # ---- 容器与站台 ----
     # 其中砂轮/讲台/切石机/箱子/陷阱箱/堆肥桶/炼药锅/酿造台/附魔台/铁砧
@@ -314,7 +317,8 @@ NON_BUILDING_BLOCKS = {
 # 放进色板只会让匹配多几个选项。担心哪一种就自己用面板的「禁用方块」排除。
 # （如果确实出现了"放下去就变形"的方块再往这里加，但要有实测依据，不是凭想象。）
 NON_BUILDING_SUFFIXES = ()
-NON_BUILDING_PREFIXES = ()
+# 虫蚀方块：外观是石头/石砖，挖开刷蠹虫。用户 2026-10-30 要求全部排除。
+NON_BUILDING_PREFIXES = ("minecraft:infested_",)
 
 
 # 「自带光、放下就亮」的整方块。**不含需要充能的**（红石灯、铜灯泡要红石信号，
@@ -338,19 +342,102 @@ LIGHT_BLOCKS = frozenset({
 })
 
 
+# 「工作方块」：带 BlockEntity、会 tick、或者右键开界面的一类。
+#
+# 它们不像纯色方块那样"摆着不动"——每个都有方块实体在 tick（烧制、抓蜜蜂、
+# 红石逻辑、存书……）。摆几万个，Litematica 加载和游戏 tick 都会吃力。
+# 所以默认**不用**，面板「允许工作方块」打开后才参与匹配。
+#
+# 注意：普通书架 bookshelf 不在里面——它是纯装饰方块，没有 BlockEntity 也不 tick。
+# 红石灯、铜灯也不在里面（只响应方块更新，不 tick）。
+WORKSTATION_BLOCKS = frozenset({
+    # 熔炉类：烧东西时持续 tick
+    "minecraft:furnace",
+    "minecraft:blast_furnace",
+    "minecraft:smoker",
+    # 村民工作站点 + 交互界面
+    "minecraft:barrel",
+    "minecraft:loom",
+    "minecraft:cartography_table",
+    "minecraft:fletching_table",
+    "minecraft:smithing_table",
+    "minecraft:crafting_table",
+    "minecraft:crafter",
+    "minecraft:chiseled_bookshelf",
+    "minecraft:beehive",
+    "minecraft:bee_nest",
+    # 红石与机械：高频 tick
+    "minecraft:dispenser",
+    "minecraft:dropper",
+    "minecraft:piston",
+    "minecraft:sticky_piston",
+    "minecraft:observer",
+    "minecraft:note_block",
+    "minecraft:target",
+    "minecraft:hopper",
+    "minecraft:daylight_detector",
+    # 其它带方块实体的
+    "minecraft:jukebox",
+    "minecraft:beacon",
+    "minecraft:respawn_anchor",
+    "minecraft:lodestone",
+    # 模型不是整方块（本来就被筛掉），列全是为了将来放宽时不会漏
+    "minecraft:grindstone",
+    "minecraft:lectern",
+    "minecraft:stonecutter",
+    "minecraft:composter",
+    "minecraft:cauldron",
+    "minecraft:brewing_stand",
+    "minecraft:enchanting_table",
+    "minecraft:sculk_sensor",
+    "minecraft:calibrated_sculk_sensor",
+})
+
+
+def is_usable_block(name: str, work_blocks: bool = False) -> bool:
+    """色板最终是否可用。work_blocks=False 时把工作方块也排除掉。
+
+    面板、清单工具、测试都走这一个判定，避免各写一套。
+    """
+    if not _is_building_block(name):
+        return False
+    if not work_blocks and name in WORKSTATION_BLOCKS:
+        return False
+    return True
+
+
 def _changes_on_place(name: str) -> bool:
     """放下去就**变成另一种方块**的，不能用。
 
     这类和"能不能放"是两件事：方块放得下，但放完颜色/外观就不是它了。
-    目前唯一一类是**活珊瑚**——离开水立刻变死珊瑚，整块从粉/紫/黄/青变成灰绿，
-    等于选了个完全不同的颜色。而 `dead_*` 系列本来就是死的，放下去不会再变，保留。
+    目前三类：
+
+    - **活珊瑚**：离开水立刻变死珊瑚，整块从粉/紫/黄/青变成灰绿。
+      `dead_*` 系列本来就是死的，放下去不会再变，保留。
+    - **会融化的冰**（`ice` / `frosted_ice`）：光照 12 以上化成水。
+      `packed_ice` / `blue_ice` 不融化，保留。
+    - **非涂蜡铜方块**：随时间氧化，亮铜 → 斑驳 → 锈蚀 → 氧化绿。
+      `*_ore` 和 `raw_copper_block` 不氧化；`waxed_*` 锁住外观，保留。
 
     加新条目之前先确认「放置后确实会变」，不能凭想象。
     """
     short = name.split(":", 1)[-1]
-    if "coral" not in short:
-        return False
-    return not short.startswith("dead_")
+
+    # 活珊瑚 -> 死珊瑚（离水整块变灰绿）
+    if "coral" in short:
+        return not short.startswith("dead_")
+
+    # 会融化的冰：光照等级 12 以上化成水，霜冰踩过还会碎
+    # 浮冰 packed_ice / 蓝冰 blue_ice 不融化，保留
+    if short in ("ice", "frosted_ice"):
+        return True
+
+    # 非涂蜡铜方块：随时间氧化，颜色从亮铜 -> 斑驳 -> 锈蚀 -> 氧化绿
+    # 矿石/粗矿块不氧化；waxed_* 涂过蜡，锁住当前外观，保留
+    if "copper" in short and not short.startswith("waxed_"):
+        return not (short.endswith("_ore") or short == "raw_copper_block")
+
+    return False
 
 
 def _is_building_block(name: str) -> bool:

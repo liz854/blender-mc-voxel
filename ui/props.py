@@ -175,6 +175,13 @@ class MCVoxelProps(bpy.types.PropertyGroup):
         "关掉的话这些方块不参与匹配，颜色相近的位置会换成不发光的方块",
         default=True,
     )
+    work_blocks: bpy.props.BoolProperty(
+        name="允许工作方块",
+        description="默认关：熔炉、工作台、村民工作站、红石机械、信标这类带方块实体、"
+        "会持续 tick 的方块不参与匹配。摆得多时它们会拖慢游戏和 Litematica 加载。"
+        "打开后才允许用",
+        default=False,
+    )
     max_kinds: bpy.props.IntProperty(
         name="方块种类上限",
         description="超过时把用得最少的方块并到颜色最接近的保留方块。"

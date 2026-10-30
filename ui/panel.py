@@ -94,6 +94,7 @@ class MCVOXEL_PT_advanced(bpy.types.Panel):
         col.label(text="效果", icon="MODIFIER")
         col.prop(props, "solid_fill")
         col.prop(props, "gravity_support")
+        col.prop(props, "work_blocks")
         col.prop(props, "light_blocks")
         col.prop(props, "max_kinds")
         col.prop(props, "noise")

@@ -264,8 +264,25 @@ REAL_JAR = os.environ.get("MC_JAR") or (find_client_jar() or "")
 @pytest.mark.skipif(not os.path.exists(REAL_JAR), reason="本机没有 26.3 客户端 jar")
 def test_real_jar_parses():
     colors = pack.load_block_colors(REAL_JAR)
-    # 数量会随剔除规则变化。2026-10-30 放开功能方块与外观类剔除后是 417 种
-    assert len(colors) > 380, f"整方块数量太少：{len(colors)}"
+    # 数量会随剔除规则变化。2026-10-30 放开功能方块后是 417，
+    # 再排除会变形的冰/铜、虫蚀、可疑沙、催发体后是 369
+    assert len(colors) > 350, f"整方块数量太少：{len(colors)}"
+
+    # 会随时间/环境变化的方块必须挡
+    for bad in ("minecraft:ice", "minecraft:frosted_ice",          # 会融化
+                "minecraft:copper_block", "minecraft:cut_copper",  # 会氧化
+                "minecraft:exposed_copper", "minecraft:weathered_cut_copper",
+                "minecraft:infested_stone", "minecraft:infested_deepslate",
+                "minecraft:suspicious_sand", "minecraft:suspicious_gravel",
+                "minecraft:sculk_catalyst"):
+        assert bad not in colors, f"{bad} 放下去会变，应排除"
+
+    # 不融化/不氧化的同类保留
+    for ok in ("minecraft:packed_ice", "minecraft:blue_ice",
+               "minecraft:waxed_copper_block", "minecraft:waxed_oxidized_copper",
+               "minecraft:copper_ore", "minecraft:raw_copper_block",
+               "minecraft:sculk"):
+        assert ok in colors, f"{ok} 不会变，不该被剔掉"
 
     # 非整方块的形状不对，仍然不能混进来（台阶/门/栅栏放下去不是一格方块）
     for bad in ("minecraft:oak_fence", "minecraft:stone_slab", "minecraft:oak_door"):
@@ -309,6 +326,55 @@ def test_real_jar_parses():
     assert colors["minecraft:sand"][0] > 190  # 沙是浅色
 
 
+def test_melting_ice_excluded():
+    """会融化的冰排除，不融化的冰保留。
+
+    ice 光照 12 以上化成水，frosted_ice 踩过还会碎；packed_ice / blue_ice 不融化。
+    """
+    assert pack._changes_on_place("minecraft:ice")
+    assert pack._changes_on_place("minecraft:frosted_ice")
+    for keep in ("minecraft:packed_ice", "minecraft:blue_ice"):
+        assert not pack._changes_on_place(keep), f"{keep} 不融化，不该挡"
+
+
+def test_unwaxed_copper_excluded():
+    """非涂蜡铜方块会随时间氧化，必须排除；涂蜡版锁住外观，保留。"""
+    for bad in ("minecraft:copper_block", "minecraft:cut_copper",
+                "minecraft:chiseled_copper", "minecraft:copper_grate",
+                "minecraft:exposed_copper", "minecraft:weathered_copper",
+                "minecraft:oxidized_cut_copper", "minecraft:copper_bulb"):
+        assert pack._changes_on_place(bad), f"{bad} 会氧化，应排除"
+    for ok in ("minecraft:waxed_copper_block", "minecraft:waxed_cut_copper",
+               "minecraft:waxed_exposed_copper", "minecraft:waxed_oxidized_copper",
+               "minecraft:waxed_copper_bulb"):
+        assert not pack._changes_on_place(ok), f"{ok} 涂过蜡，不该挡"
+    # 矿石和粗矿块不氧化
+    for ok in ("minecraft:copper_ore", "minecraft:deepslate_copper_ore",
+               "minecraft:raw_copper_block"):
+        assert not pack._changes_on_place(ok), f"{ok} 不氧化，不该挡"
+
+
+def test_work_blocks_off_by_default():
+    """工作方块默认不参与匹配，打开开关后才可用。
+
+    它们带 BlockEntity、会持续 tick（烧制、抓蜜蜂、红石逻辑、存书），
+    摆几万个时游戏和 Litematica 都吃力。纯装饰方块不受影响。
+    """
+    from core.pack import is_usable_block
+
+    for name in ("minecraft:furnace", "minecraft:crafting_table",
+                 "minecraft:blast_furnace", "minecraft:barrel",
+                 "minecraft:dispenser", "minecraft:beacon", "minecraft:beehive"):
+        assert pack._is_building_block(name), f"{name} 本身不是「放不下」的方块"
+        assert not is_usable_block(name, work_blocks=False), f"{name} 默认应该不用"
+        assert is_usable_block(name, work_blocks=True), f"{name} 开关打开后应该可用"
+
+    # 纯装饰方块不受工作方块开关影响
+    for name in ("minecraft:bookshelf", "minecraft:redstone_lamp",
+                 "minecraft:oak_planks", "minecraft:stone"):
+        assert is_usable_block(name, work_blocks=False), f"{name} 不该被工作方块开关影响"
+
+
 def test_live_coral_excluded_dead_kept():
     """活珊瑚必须排除，死珊瑚必须保留。
 
@@ -344,15 +410,18 @@ def test_suffix_blacklist_is_empty():
     再往这里加条目要先有"实测放下去必然出错"的证据，不能凭想象。
     """
     assert pack.NON_BUILDING_SUFFIXES == ()
-    assert pack.NON_BUILDING_PREFIXES == ()
+    # 前缀只留虫蚀方块（外观是石头，挖开刷蠹虫）
+    assert pack.NON_BUILDING_PREFIXES == ("minecraft:infested_",)
     for name in (
         "minecraft:oak_leaves",
         "minecraft:black_concrete_powder",
-        "minecraft:infested_stone",
         "minecraft:red_glazed_terracotta",
         "minecraft:dead_brain_coral_block",  # 死的本来就不变
     ):
         assert pack._is_building_block(name), f"{name} 能正常放置，不该被挡"
+    for bad in ("minecraft:infested_stone", "minecraft:infested_cobblestone",
+                "minecraft:infested_deepslate"):
+        assert not pack._is_building_block(bad), f"{bad} 是虫蚀方块，应排除"
     # 正常建材当然还在
     for name in ("minecraft:stone", "minecraft:oak_planks", "minecraft:grass_block"):
         assert pack._is_building_block(name), name

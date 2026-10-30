@@ -27,7 +27,8 @@ from core.pack import (  # noqa: E402
     NON_BUILDING_BLOCKS,
     NON_BUILDING_PREFIXES,
     NON_BUILDING_SUFFIXES,
-    _changes_on_place,
+    WORKSTATION_BLOCKS,
+    is_usable_block,
     load_cached_stats,
 )
 
@@ -160,8 +161,15 @@ def main():
     names = english_names(jar)
     zh = chinese_names()
 
+    # 面板默认不开「允许工作方块」，清单也跟着按默认来
+    usable = [k for k in colors if is_usable_block(k, work_blocks=False)]
+    skipped_work = sorted(
+        k for k in colors
+        if is_usable_block(k, work_blocks=True) and not is_usable_block(k, work_blocks=False)
+    )
+
     items = []
-    for full in colors:
+    for full in usable:
         short = full.split(":", 1)[1]
         rgb = colors[full]
         items.append((short, zh.get(short, ""), names.get(short, ""), rgb, family(short)))
@@ -174,7 +182,11 @@ def main():
     L = []
     L.append("# 可用方块清单")
     L.append("")
-    L.append(f"来源 `{os.path.basename(jar)}`，共 **{len(items)} 种**整方块。")
+    L.append(f"来源 `{os.path.basename(jar)}`，默认可用 **{len(items)} 种**。")
+    if skipped_work:
+        L.append(
+            f"另有 {len(skipped_work)} 种工作方块，面板「允许工作方块」打开后可用（见文末）。"
+        )
     L.append("按方块 ID 字母序排列，方便按名字找。色值是 jar 纹理解析出的平均色。")
     if zh:
         L.append("中文名取自官方 26.3 语言文件。")
@@ -214,6 +226,11 @@ def main():
     L.append("|---|---|")
     L.append("| `*_coral_block` / `*_coral` / `*_coral_fan` 活珊瑚 | 离开水立刻变死珊瑚，整块从粉/紫/黄/青变成灰绿 |")
     L.append("| `dead_*_coral*` 死珊瑚 | **没有排除**，本来就是死的，放下去不会再变 |")
+    L.append("| `ice` 冰 / `frosted_ice` 霜冰 | 光照 12 以上化成水，霜冰踩过还会碎 |")
+    L.append("| `packed_ice` 浮冰 / `blue_ice` 蓝冰 | **没有排除**，不融化 |")
+    L.append("| 非涂蜡铜方块（`copper_block` / `cut_copper` / `copper_grate` / `copper_bulb` / 各种 `exposed` `weathered` `oxidized`） | 随时间氧化，亮铜 → 斑驳 → 锈蚀 → 氧化绿 |")
+    L.append("| `waxed_*` 涂蜡铜 | **没有排除**，蜡锁住外观，不再变化 |")
+    L.append("| `copper_ore` / `raw_copper_block` | **没有排除**，矿石和粗矿块不氧化 |")
     L.append("")
     L.append("### 3. 点名排除（会刷怪 / 执行命令 / 拆不掉 / 开界面）")
     L.append("")
@@ -223,6 +240,25 @@ def main():
         short = full.split(":", 1)[1]
         L.append(f"| **{zh.get(short, '—')}** | `{short}` | {names.get(short, '')} |")
     L.append("")
+    L.append("### 3b. 工作方块（默认不用，面板可开）")
+    L.append("")
+    L.append(
+        "带 BlockEntity、会持续 tick、或者右键开界面的方块。摆几万个时游戏 tick 和 "
+        "Litematica 加载都会明显吃力，所以默认不参与匹配。"
+        "打开「高级设置 → 效果 → 允许工作方块」就能用。"
+    )
+    L.append("")
+    if skipped_work:
+        L.append("| 中文名 | 方块 ID |")
+        L.append("|---|---|")
+        for full in skipped_work:
+            short = full.split(":", 1)[1]
+            L.append(f"| **{zh.get(short, '—')}** | `{short}` |")
+        L.append("")
+    L.append("> 普通书架 `bookshelf`、红石灯 `redstone_lamp` 不属于工作方块——"
+             "它们没有 BlockEntity、不 tick，是纯装饰方块。")
+    L.append("")
+
     if NON_BUILDING_SUFFIXES or NON_BUILDING_PREFIXES:
         L.append("### 4. 按后缀/前缀排除")
         L.append("")

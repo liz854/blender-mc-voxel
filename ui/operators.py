@@ -87,13 +87,32 @@ def _get_palette(props) -> BlockPalette:
     if not getattr(props, "light_blocks", False):
         from ..core.pack import LIGHT_BLOCKS
 
-        extra = [n for n in LIGHT_BLOCKS if n in colors]
+        # 白名单里明确点名的方块不自动禁掉，否则会和用户的意图打架
+        extra = [n for n in LIGHT_BLOCKS if n in colors and (not allow or n not in allow)]
         if extra:
             deny = list(dict.fromkeys(list(deny) + extra))
             print(
                 f"[mc_voxel] 已排除 {len(extra)} 种照明方块："
                 + ", ".join(n.split(":")[1] for n in sorted(extra))
                 + "（想用就在高级设置里打开「允许照明方块」）"
+            )
+
+    # 工作方块：带 BlockEntity、会持续 tick、右键开界面的那一类
+    # （熔炉烧制、抓蜜蜂、红石逻辑、存书……）。摆几万个时游戏和 Litematica
+    # 都会明显吃力，所以默认不用。纯装饰的书架、木板之类不受影响。
+    if not getattr(props, "work_blocks", False):
+        from ..core.pack import WORKSTATION_BLOCKS
+
+        extra = [
+            n for n in WORKSTATION_BLOCKS if n in colors and (not allow or n not in allow)
+        ]
+        if extra:
+            deny = list(dict.fromkeys(list(deny) + extra))
+            print(
+                f"[mc_voxel] 已排除 {len(extra)} 种工作方块（默认不用，防卡顿）："
+                + ", ".join(sorted(n.split(":")[1] for n in extra)[:8])
+                + ("…" if len(extra) > 8 else "")
+                + "（想用就在高级设置里打开「允许工作方块」）"
             )
 
     if allow is None and not deny:
