@@ -203,9 +203,9 @@ def main():
         from bl_ext.user_default.mc_voxel_export.core.pack import LIGHT_BLOCKS
 
         palette_colors, palette_stds = load_cached_stats(jar, CACHE)
-        # 和面板一致：默认不用照明方块（蛙鸣灯那种夜里会发光的）
-        palette = BlockPalette(palette_colors, stds=palette_stds, deny=LIGHT_BLOCKS)
-        print(f"[try] 色板 {len(palette.names)} 种（已排除照明方块）")
+        # 和面板一致：照明方块默认允许（面板「允许照明方块」默认开）
+        palette = BlockPalette(palette_colors, stds=palette_stds)
+        print(f"[try] 色板 {len(palette.names)} 种（照明方块已放开）")
     except Exception as exc:
         from bl_ext.user_default.mc_voxel_export.core.palette import load_fallback_palette
 

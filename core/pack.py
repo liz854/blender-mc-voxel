@@ -17,7 +17,7 @@ TEXTURE_KEYS = ("all", "top", "side", "texture", "particle", "end", "bottom")
 
 # 改了解析逻辑（过滤规则、tint、取纹理的优先级、缓存里存 std）就 +1，
 # 让旧缓存失效。否则代码修好了、缓存还是旧结果，问题看起来"没修好"。
-CACHE_VERSION = 9
+CACHE_VERSION = 10
 
 # 这些方块的纹理是灰度图，游戏里按生物群系 tint 上色。
 # 不乘上 tint，草方块和树叶会变成灰色，体素配色直接废掉。
@@ -261,59 +261,28 @@ def _apply_tint(block_name: str, rgb: Tuple[int, int, int]) -> Tuple[int, int, i
 
 # 功能方块：是整方块，但纹理是器物图案（工作台、书架、熔炉…），
 # 拿来当体素会把整面墙变成杂乱图案。做纯色/材质色用，排除。
-NON_BUILDING_BLOCKS = {
-    "minecraft:bookshelf", "minecraft:chiseled_bookshelf", "minecraft:crafting_table",
-    "minecraft:cartography_table", "minecraft:fletching_table", "minecraft:smithing_table",
-    "minecraft:loom", "minecraft:stonecutter", "minecraft:grindstone", "minecraft:lectern",
-    "minecraft:jukebox", "minecraft:note_block", "minecraft:chest", "minecraft:trapped_chest",
-    "minecraft:barrel", "minecraft:furnace", "minecraft:blast_furnace", "minecraft:smoker",
-    "minecraft:crafting_table", "minecraft:beehive", "minecraft:bee_nest",
-    "minecraft:target", "minecraft:tnt", "minecraft:sponge", "minecraft:dried_kelp_block",
-    "minecraft:mushroom_stem", "minecraft:red_mushroom_block", "minecraft:brown_mushroom_block",
-    "minecraft:melon", "minecraft:pumpkin", "minecraft:carved_pumpkin", "minecraft:jack_o_lantern",
-    "minecraft:magma_block", "minecraft:daylight_detector", "minecraft:observer",
-    "minecraft:piston", "minecraft:sticky_piston", "minecraft:dispenser", "minecraft:dropper",
-    "minecraft:hopper", "minecraft:composter", "minecraft:cauldron", "minecraft:brewing_stand",
-    "minecraft:enchanting_table", "minecraft:anvil", "minecraft:chipped_anvil",
-    "minecraft:damaged_anvil", "minecraft:respawn_anchor", "minecraft:lodestone",
-    "minecraft:fletching_table", "minecraft:sculk_catalyst", "minecraft:sculk_sensor",
-    "minecraft:calibrated_sculk_sensor", "minecraft:bedrock", "minecraft:spawner",
-    # 机制方块：不是"一面墙"，而且有的会发光/刷怪/长东西
-    "minecraft:beacon", "minecraft:budding_amethyst",
-    "minecraft:trial_spawner", "minecraft:vault", "minecraft:creaking_heart",
-    "minecraft:command_block", "minecraft:chain_command_block",
-    "minecraft:repeating_command_block", "minecraft:jigsaw",
-}
-
-# 靠后缀/前缀排除的整方块——它们能通过"整方块"和"纹理够纯"两关，但拿来做建材会出事：
-#   *_leaves            半透明 + 群系 tint，颜色算得漂亮，放下去是树叶不是石头
-#   *_concrete_powder   重力方块，悬空放置会塌，而且正常人都用凝固后的混凝土
-#   *_glazed_terracotta 釉面陶瓦，带朝一个方向的箭头图案，铺墙/渐变里会突然冒花纹
-#   *_coral_block       珊瑚块**离开水会变成死珊瑚**（整块变灰），选它等于选了另一个颜色
-#   *_coral             珊瑚 / 珊瑚扇，同上（保险）
-#   infested_*          虫蚀方块，挖开冒蠹虫
+# 黑名单**只装"物理上放不进墙里"的方块**。
 #
-# 注意：**矿石（*_ore）和粗金属块（raw_*）不剔**。它们虽然有斑点，但"平均色最接近"
-# 就是本项目的匹配准则，没有理由因为"不够纯"就排除。真觉得花，用面板的白名单避开。
-NON_BUILDING_SUFFIXES = (
-    "_leaves",
-    "_concrete_powder",
-    "_glazed_terracotta",
-    "_coral_block",
-    "_coral",
-)
-NON_BUILDING_PREFIXES = ("minecraft:infested_",)
-
-# 放置条件苛刻、当体素必然放不下的方块。目前只有仙人掌：
-# 它要求四周都不能挨着其他方块，埋在墙里根本放不下去（连试都不让试）。
-# 这类方块不能只靠"色差最小"选出来，会直接毁掉一段墙。
-NON_BUILDING_BLOCKS |= {
-    "minecraft:cactus",         # 要求四周不能挨着其他方块，埋进墙里放不下去
-    "minecraft:crafter",        # 合成器：机制方块
-    "minecraft:structure_block",     # 结构方块
-    "minecraft:test_block",         # 测试方块
-    "minecraft:test_instance_block",
+# 曾经这里塞了 60 多个：书架、工作台、熔炉、南瓜、炼药锅、活塞、信标、床……
+# 理由是"这些不是建材"。用户 2026-10-30 明确纠正：**只要能正常放置就不要挡**——
+# 书架就是书架的纹理，工作台就是胶合板的颜色，玻璃熔炉是浅灰的，它们作为
+# "平均色最接近的方块"完全正当，挡掉等于凭空少掉一批好素材。
+# 真正该挡的只有一类：游戏根本不让放在那个位置的。
+NON_BUILDING_BLOCKS = {
+    # 仙人掌要求四面都不能挨着其他方块，埋进墙里连放置都被拒绝
+    "minecraft:cactus",
 }
+
+# 靠后缀/前缀排除的整方块——**现在是空的**。
+#
+# 以前这里挡了 _leaves（半透明+tint）、_concrete_powder（悬空会塌）、
+# _glazed_terracotta（带方向箭头）、_coral_block（离水变死珊瑚）、infested_*（冒蠹虫）。
+# 2026-10-30 用户要求全部放出来：这些方块**都能正常放置**，颜色就是它们的真实颜色，
+# 放进色板只会让匹配多几个选项。担心哪一种就自己用面板的「禁用方块」排除。
+# （如果确实出现了"放下去就变形"的方块再往这里加，但要有实测依据，不是凭想象。）
+NON_BUILDING_SUFFIXES = ()
+NON_BUILDING_PREFIXES = ()
+
 
 # 「自带光、放下就亮」的整方块。**不含需要充能的**（红石灯、铜灯泡要红石信号，
 # 未充能时是暗的，选它等于选了一个颜色不对的方块）。

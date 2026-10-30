@@ -151,33 +151,55 @@ def test_partial_model_is_not_full_cube(tmp_path):
 # --------------------------------------------------------------------------
 # 花纹理过滤
 # --------------------------------------------------------------------------
-def test_noisy_texture_filtered(tmp_path):
+def test_noisy_texture_still_kept(tmp_path):
+    """纹理花的方块也不能剔。
+
+    曾经有一道 std>42 的筛子，理由是"过滤花纹理"。实测它挡掉的 12 种里只有 4 种该挡，
+    其余全是误伤（钻石矿 42.7、白桦原木 54.4、海晶灯 47.9、萤石 62.6）。
+    书架、工作台、熔炉这类功能方块更不该挡——它们都能正常放置，颜色就是它们的真实颜色。
+    """
     jar = _make_pack(
         tmp_path / "p.zip",
         {
             "minecraft:white_concrete": {"texture_rgb": (240, 240, 240)},
             "minecraft:bookshelf": {"noisy": True},
+            "minecraft:crafting_table": {"texture_rgb": (150, 108, 74)},
+            "minecraft:furnace": {"texture_rgb": (110, 110, 110)},
         },
     )
     colors = pack.load_block_colors(jar)
-    assert "minecraft:white_concrete" in colors
-    assert "minecraft:bookshelf" not in colors
+    for name in (
+        "minecraft:white_concrete",
+        "minecraft:bookshelf",
+        "minecraft:crafting_table",
+        "minecraft:furnace",
+    ):
+        assert name in colors, f"{name} 不该被剔掉"
 
 
-def test_blacklist_blocks_filtered(tmp_path):
+def test_only_unplaceable_blocks_filtered(tmp_path):
+    """黑名单只装「物理上放不进墙里」的方块。
+
+    仙人掌要求四面都不能挨着其他方块，埋进墙里连放置都被拒绝——这类必须挡。
+    其余能正常放置的（含书架、工作台、熔炉、刷怪笼、命令方块）一律放出来。
+    """
     jar = _make_pack(
         tmp_path / "p.zip",
-        {"minecraft:stone": {}, "minecraft:crafting_table": {}, "minecraft:chest": {}},
+        {
+            "minecraft:stone": {},
+            "minecraft:cactus": {},
+            "minecraft:crafting_table": {},
+            "minecraft:chest": {},
+            "minecraft:bookshelf": {},
+        },
     )
     colors = pack.load_block_colors(jar)
     assert "minecraft:stone" in colors
-    assert "minecraft:crafting_table" not in colors
-    assert "minecraft:chest" not in colors
+    assert "minecraft:cactus" not in colors, "仙人掌在墙里放不下去，必须挡"
+    for ok in ("minecraft:crafting_table", "minecraft:chest", "minecraft:bookshelf"):
+        assert ok in colors, f"{ok} 能正常放置，不该被挡"
 
 
-# --------------------------------------------------------------------------
-# 灰度纹理 tint
-# --------------------------------------------------------------------------
 def test_grass_block_gets_green_tint(tmp_path):
     jar = _make_pack(tmp_path / "p.zip", {"minecraft:grass_block": {"texture_rgb": (147, 147, 147)}})
     colors = pack.load_block_colors(jar)
@@ -242,24 +264,30 @@ REAL_JAR = os.environ.get("MC_JAR") or (find_client_jar() or "")
 @pytest.mark.skipif(not os.path.exists(REAL_JAR), reason="本机没有 26.3 客户端 jar")
 def test_real_jar_parses():
     colors = pack.load_block_colors(REAL_JAR)
-    # 数量会随剔除规则变化（316 → 剔釉面陶瓦 → 剔珊瑚/矿石/粗矿块 → 277），
-    # 只要没掉到"色板不够用"的量级就行
-    assert len(colors) > 250, f"整方块数量太少：{len(colors)}"
+    # 数量会随剔除规则变化。2026-10-30 放开功能方块与外观类剔除后是 417 种
+    assert len(colors) > 380, f"整方块数量太少：{len(colors)}"
 
-    # 非整方块和功能方块不能混进来
-    for bad in ("minecraft:oak_fence", "minecraft:stone_slab", "minecraft:oak_door",
-                "minecraft:bookshelf", "minecraft:crafting_table"):
-        assert bad not in colors, f"{bad} 不该出现在调色板里"
+    # 非整方块的形状不对，仍然不能混进来（台阶/门/栅栏放下去不是一格方块）
+    for bad in ("minecraft:oak_fence", "minecraft:stone_slab", "minecraft:oak_door"):
+        assert bad not in colors, f"{bad} 不是整方块，不该出现在调色板里"
 
-    # 珊瑚离水会变死珊瑚（整块变灰），选它等于选错颜色，必须剔
-    for bad in ("minecraft:tube_coral_block", "minecraft:brain_coral_block",
-                "minecraft:dead_tube_coral_block"):
-        assert bad not in colors, f"{bad} 不该出现在调色板里"
+    # 功能方块能正常放置，必须保留（用户 2026-10-30 明确要求）
+    for ok in ("minecraft:bookshelf", "minecraft:crafting_table", "minecraft:furnace",
+               "minecraft:beacon", "minecraft:command_block"):
+        assert ok in colors, f"{ok} 能正常放置，不该被剔掉"
 
-    # 矿石/粗矿块**保留**：有斑点但有可能是平均色最近的那个，匹配准则就是"平均色最接近"
-    for ok in ("minecraft:copper_ore", "minecraft:redstone_ore",
-               "minecraft:raw_iron_block"):
+    # 树叶/珊瑚/釉面陶瓦也保留：颜色就是它们的真实颜色
+    for ok in ("minecraft:oak_leaves", "minecraft:tube_coral_block",
+               "minecraft:red_glazed_terracotta", "minecraft:sea_lantern"):
         assert ok in colors, f"{ok} 不该被剔掉"
+
+    # 矿石/粗矿块保留：匹配准则就是"平均色最接近"
+    for ok in ("minecraft:copper_ore", "minecraft:redstone_ore",
+               "minecraft:raw_iron_block", "minecraft:birch_log"):
+        assert ok in colors, f"{ok} 不该被剔掉"
+
+    # 唯一该挡的：仙人掌在墙里放不下去
+    assert "minecraft:cactus" not in colors
 
     # 判定颜色合理性
     assert colors["minecraft:stone"][0] == colors["minecraft:stone"][1]  # 灰色，R≈G
@@ -268,34 +296,32 @@ def test_real_jar_parses():
     assert colors["minecraft:sand"][0] > 190  # 沙是浅色
 
 
-# ---------------- 建材资格过滤 ----------------
+def test_suffix_blacklist_is_empty():
+    """后缀黑名单必须是空的。
 
-def test_non_building_suffixes_excluded():
-    """树叶/混凝土粉末能过"整方块+纯色"两关，但做替代方块会出事。"""
-    assert not pack._is_building_block("minecraft:oak_leaves")
-    assert not pack._is_building_block("minecraft:pale_oak_leaves")
-    assert not pack._is_building_block("minecraft:black_concrete_powder")
-    assert not pack._is_building_block("minecraft:infested_stone")
-    # 釉面陶瓦有方向箭头图案；珊瑚离水变色
-    assert not pack._is_building_block("minecraft:red_glazed_terracotta")
-    assert not pack._is_building_block("minecraft:tube_coral_block")
-    assert not pack._is_building_block("minecraft:dead_brain_coral_block")
-    # 矿石和粗矿块保留：有斑点不影响"平均色最接近"这个准则
-    assert pack._is_building_block("minecraft:diamond_ore")
-    assert pack._is_building_block("minecraft:raw_gold_block")
-    # 正常建材不能被误杀
+    以前靠后缀挡了 _leaves（半透明+tint）、_concrete_powder（悬空会塌）、
+    _glazed_terracotta（带方向箭头）、_coral_block（离水变灰）、infested_*（冒蠹虫）。
+    用户 2026-10-30 要求全部放出来——这些方块都能正常放置，颜色就是真实颜色。
+    再往这里加条目要先有"实测放下去必然出错"的证据，不能凭想象。
+    """
+    assert pack.NON_BUILDING_SUFFIXES == ()
+    assert pack.NON_BUILDING_PREFIXES == ()
     for name in (
-        "minecraft:stone",
-        "minecraft:black_concrete",
-        "minecraft:oak_planks",
-        "minecraft:grass_block",
-        "minecraft:deepslate_bricks",
+        "minecraft:oak_leaves",
+        "minecraft:black_concrete_powder",
+        "minecraft:infested_stone",
+        "minecraft:red_glazed_terracotta",
+        "minecraft:tube_coral_block",
+        "minecraft:dead_brain_coral_block",
     ):
+        assert pack._is_building_block(name), f"{name} 能正常放置，不该被挡"
+    # 正常建材当然还在
+    for name in ("minecraft:stone", "minecraft:oak_planks", "minecraft:grass_block"):
         assert pack._is_building_block(name), name
 
 
-def test_leaves_filtered_from_real_palette(tmp_path):
-    """假资源包里的树叶必须被 load_block_colors 剔掉。"""
+def test_leaves_and_powder_kept(tmp_path):
+    """树叶、混凝土粉末都要保留——它们能正常放置，颜色就是真实颜色。"""
     jar = _make_pack(
         tmp_path / "p.zip",
         {
@@ -306,8 +332,8 @@ def test_leaves_filtered_from_real_palette(tmp_path):
     )
     colors = pack.load_block_colors(jar)
     assert "minecraft:stone" in colors
-    assert "minecraft:oak_leaves" not in colors
-    assert "minecraft:red_concrete_powder" not in colors
+    assert "minecraft:oak_leaves" in colors
+    assert "minecraft:red_concrete_powder" in colors
 
 
 def test_cactus_is_not_a_building_block():
@@ -350,22 +376,24 @@ def test_texture_std_filter_is_off_by_default():
         assert default is None, f"{fn.__name__} 的 max_texture_std 默认应该是 None"
 
 
-def test_mechanism_blocks_in_blacklist():
-    """不能当建材的方块靠黑名单挡，不靠纹理判断。"""
-    from core.pack import _is_building_block
+def test_mechanism_blocks_are_kept():
+    """功能方块（合成器、结构方块、命令方块、刷怪笼）都要保留。
 
+    它们都能正常放置，作为"平均色最接近的方块"完全正当。
+    以前挡住它们只是因为"这些不是建材"——那是审美判断，不归这个项目管。
+    """
     for name in (
         "minecraft:crafter",
         "minecraft:structure_block",
-        "minecraft:test_block",
-        "minecraft:cactus",
+        "minecraft:command_block",
+        "minecraft:beacon",
+        "minecraft:spawner",
+        "minecraft:bookshelf",
+        "minecraft:crafting_table",
+        "minecraft:furnace",
     ):
-        assert not _is_building_block(name), f"{name} 应该被排除"
-    # 这些必须留着
-    for name in (
-        "minecraft:birch_log",
-        "minecraft:sea_lantern",
-        "minecraft:glowstone",
-        "minecraft:deepslate_diamond_ore",
-    ):
-        assert _is_building_block(name), f"{name} 不该被排除"
+        assert pack._is_building_block(name), f"{name} 能正常放置，不该被挡"
+    # 唯一该挡的
+    assert not pack._is_building_block("minecraft:cactus")
+
+
