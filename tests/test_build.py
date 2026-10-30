@@ -123,3 +123,38 @@ def test_model_carries_palette_colors():
     assert m._colors[name] == pal.color_of(name)
     _v, _q, vcols = mesh_export.model_to_mesh(m)
     assert not np.all(vcols == 200.0)
+
+
+def test_noise_mixes_second_best_but_is_reproducible():
+    """噪声打开后同色区域会出现第二种方块，但同样输入每次结果一致。"""
+    colors = {
+        "minecraft:flat_block": (120, 120, 120),
+        "minecraft:busy_block": (122, 120, 118),
+    }
+    stds = {"minecraft:flat_block": 2.0, "minecraft:busy_block": 30.0}
+    pal = BlockPalette(colors, stds=stds)
+    verts, tris = box_mesh((0, 0, 0), (8, 8, 8))
+    vc = np.tile(np.array([[120.0, 120.0, 120.0]]), (len(verts), 1))
+
+    def used(noise):
+        m = core_build.build_voxel_model(verts, tris, vc, 1.0, pal, noise=noise)
+        return {m.palette[int(i)].name for i in np.unique(m.blocks)}
+
+    assert len(used(0)) == 1, "噪声 0 时只该用最优方块"
+    noisy = used(50)
+    assert len(noisy) >= 2, f"噪声 50% 应该混入第二种方块，实际只有 {noisy}"
+    assert used(50) == noisy, "同样输入两次结果必须一致（哈希而非随机数）"
+
+
+def test_noise_keeps_block_count():
+    """噪声只换方块种类，不能改变方块数量。"""
+    colors = {
+        "minecraft:flat_block": (120, 120, 120),
+        "minecraft:busy_block": (122, 120, 118),
+    }
+    pal = BlockPalette(colors, stds={"minecraft:flat_block": 2.0, "minecraft:busy_block": 30.0})
+    verts, tris = box_mesh((0, 0, 0), (6, 6, 6))
+    vc = np.tile(np.array([[120.0, 120.0, 120.0]]), (len(verts), 1))
+    a = core_build.build_voxel_model(verts, tris, vc, 1.0, pal, noise=0)
+    b = core_build.build_voxel_model(verts, tris, vc, 1.0, pal, noise=80)
+    assert a.total_blocks == b.total_blocks == 216

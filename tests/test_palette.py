@@ -260,3 +260,16 @@ def test_without_carries_stds():
     assert q.luts is not None
     assert q.stds.tolist() == [14.0, 30.0]
     assert q.nearest((128, 128, 128), std=1.0) == "minecraft:mid_block"
+
+
+def test_nearest_topk_first_row_matches_exact_match():
+    """topk 的第 0 行必须与精确匹配完全一致，否则噪声会把最优方块挤掉。"""
+    p = _std_test_palette()
+    rgbs = np.array([[128, 128, 128], [130, 128, 126], [60, 60, 60]], dtype=float)
+    stds = [1.0, 14.0, 27.0]
+    top = p.nearest_topk(rgbs, stds=stds, k=2)
+    best = p.nearest_batch(rgbs, stds=stds, exact=True)
+    assert top.shape == (2, 3)
+    assert [p.names[int(i)] for i in top[0]] == best
+    # 第二行不能和第一行重复
+    assert all(int(top[0][i]) != int(top[1][i]) for i in range(3))

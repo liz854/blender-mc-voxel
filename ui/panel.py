@@ -107,8 +107,12 @@ class MCVOXEL_PT_panel(bpy.types.Panel):
         box.label(text="导出", icon="EXPORT")
         box.prop(props, "export_format")
         box.prop(props, "auto_split")
+        box.prop(props, "noise")
         box.prop(props, "dimension")
         box.prop(props, "strict_height")
+        # 坐标转换是 bl(x,y,z) -> mc(x, z, -y)，所以 Blender 的 +Y 是 MC 的北。
+        # 摆投影时最容易搞反的就是朝向，这里直接写出来。
+        box.label(text="MC 朝向：+X 东，+Y 北，+Z 上", icon="INFO")
 
         # 限高：数值来自客户端 jar 的 dimension_type，读不到用内置兜底
         from ..core.limits import GROUND_LEVEL, get_dimension
@@ -146,6 +150,7 @@ class MCVOXEL_PT_panel(bpy.types.Panel):
         row.operator("mc_voxel.voxelize", icon="MOD_BUILD")
         row.operator("mc_voxel.preview", icon="RESTRICT_VIEW_OFF")
         layout.operator("mc_voxel.export", icon="FILE_TICK")
+        layout.operator("mc_voxel.export_all", icon="FILE_FOLDER")
 
         # 上次导出的回读：state report 只在状态栏闪一下，看不见就以为没导出
         if props.last_export_note:
@@ -170,6 +175,7 @@ class MCVOXEL_MT_menu(bpy.types.Menu):
         layout.operator("mc_voxel.render_preview", icon="RENDER_STILL")
         layout.separator()
         layout.operator("mc_voxel.export", icon="FILE_TICK")
+        layout.operator("mc_voxel.export_all", icon="FILE_FOLDER")
 
 
 def _menu_entry(self, context):
@@ -195,6 +201,7 @@ class MCVOXEL_MT_view3d_menu(bpy.types.Menu):
         layout.operator("mc_voxel.render_preview", icon="RENDER_STILL")
         layout.separator()
         layout.operator("mc_voxel.export", icon="FILE_TICK")
+        layout.operator("mc_voxel.export_all", icon="FILE_FOLDER")
 
 
 def _view3d_menu_entry(self, context):

@@ -177,6 +177,14 @@ class MCVoxelProps(bpy.types.PropertyGroup):
         description="模型太大时按最长轴切成几段分别导出，每段独立体素化，峰值内存只按单段算",
         default=True,
     )
+    noise: bpy.props.IntProperty(
+        name="噪声",
+        description="同一颜色区域里按这个比例混入次优方块，打散大面积墙面的单调感。0 = 永远选最接近的",
+        default=0,
+        min=0,
+        max=100,
+        subtype="PERCENTAGE",
+    )
 
 
 def register():

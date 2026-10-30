@@ -290,6 +290,35 @@ class BlockPalette:
             idx = self.lut[i, j, k]
         return [self.names[int(v)] for v in idx]
 
+    def nearest_topk(self, rgbs, stds=None, k: int = 2) -> np.ndarray:
+        """返回 (k, n) 的方块下标：第 0 行最接近，后面依次变差。
+
+        给"噪声"用：同色区域里按比例混入次优方块，打散大面积墙面的单调。
+        成本函数与 nearest_batch(exact=True) 完全一致，只是多留下几个候选。
+        """
+        arr = np.asarray(rgbs, dtype=np.float64)
+        labs = srgb_to_lab(arr.reshape(-1, 3))
+        n = len(labs)
+        k = max(1, min(int(k), len(self.names)))
+        out = np.zeros((k, n), dtype=np.int64)
+        penalty = None
+        if stds is not None and self.has_texture_info:
+            penalty = self.texture_weight * np.abs(
+                self.stds[None, :] - np.asarray(stds, dtype=np.float64)[:, None]
+            )
+        step = 1024
+        for start in range(0, n, step):
+            chunk = labs[start : start + step]
+            d = delta_e76(chunk[:, None, :], self.labs[None, :, :])
+            if penalty is not None:
+                d = d + penalty[start : start + step]
+            m = chunk.shape[0]
+            part = np.argpartition(d, k - 1, axis=1)[:, :k]
+            rows = np.arange(m)[:, None]
+            order = np.argsort(d[rows, part], axis=1)
+            out[:, start : start + m] = part[rows, order].T
+        return out
+
     # ---- 兜底 ----
     def fallback(self, start: int = 0) -> str:
         return self.names[start % len(self.names)]

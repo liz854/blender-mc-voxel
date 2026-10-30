@@ -238,6 +238,7 @@ def _prepare(context):
         "block_size": block_size,
         "palette": _get_palette(props),
         "autofit": autofit,
+        "noise": int(getattr(props, "noise", 0) or 0),
     }
 
 
@@ -272,6 +273,7 @@ def _build_from_st(st, context):
             palette=st["palette"],
             solid=props.solid_fill,
             no_floating_gravity=getattr(props, "gravity_support", True),
+            noise=st["noise"],
             progress=prog,
         )
     finally:
@@ -333,6 +335,7 @@ def _build_segments(st, origin, size, axis, parts, context):
                 seal_axis=axis,
                 seal_lo=i > 0,
                 seal_hi=i < len(segments) - 1,
+                noise=st["noise"],
                 progress=prog,
             )
             if model.total_blocks > props.max_blocks:
@@ -561,6 +564,103 @@ class MCVOXEL_OT_export(bpy.types.Operator, ExportHelper):
         return {"FINISHED"}
 
 
+class MCVOXEL_OT_export_all(bpy.types.Operator):
+    """把场景里每个网格物体各导出一个投影文件"""
+
+    bl_idname = "mc_voxel.export_all"
+    bl_label = "批量导出全部网格"
+    bl_options = {"REGISTER"}
+
+    directory: bpy.props.StringProperty(subtype="DIR_PATH")
+    filter_folder: bpy.props.BoolProperty(default=True, options={"HIDDEN"})
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context):
+        props = _scene(context).mc_voxel
+        folder = bpy.path.abspath(self.directory)
+        if not folder or not os.path.isdir(folder):
+            self.report({"ERROR"}, "请选择一个存在的输出目录")
+            return {"CANCELLED"}
+
+        data_version = props.mc_data_version or 0
+        if not data_version:
+            try:
+                jar = bpy.path.abspath(props.jar_path) if props.jar_path else None
+                data_version = mcver.resolve_data_version(
+                    jar or mcver.find_client_jar(), release=props.mc_release
+                )
+            except mcver.DataVersionUnknown as exc:
+                self.report({"ERROR"}, f"{exc}（面板里选游戏版本或手填 DataVersion）")
+                return {"CANCELLED"}
+
+        meshes = [o for o in bpy.data.objects if o.type == "MESH"]
+        if not meshes:
+            self.report({"ERROR"}, "场景里没有网格物体")
+            return {"CANCELLED"}
+
+        ext = {"LITEMATIC": ".litematic", "SCHEM": ".schem"}.get(
+            props.export_format, ".nbt"
+        )
+        prev_active = context.view_layer.objects.active if context.view_layer else None
+        done, failed, total_blocks = [], [], 0
+        for obj in meshes:
+            try:
+                bpy.ops.object.select_all(action="DESELECT")
+                obj.select_set(True)
+                context.view_layer.objects.active = obj
+                st = _prepare(context)
+                origin, size = core_build.grid_from_bounds(st["verts"], st["block_size"])
+                axis, parts = core_tiles.plan_parts(size, core_tiles.DEFAULT_PART_VOXELS)
+                safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in obj.name)
+                base = os.path.join(folder, safe + ext)
+                if parts > 1:
+                    models = _build_segments(st, origin, size, axis, parts, context)
+                    stem = os.path.splitext(base)[0]
+                    for i, m in enumerate(models):
+                        seg = stem + core_tiles.part_suffix(axis, i, parts) + ext
+                        _write_model(seg, m, props.export_format, props, data_version)
+                        total_blocks += m.total_blocks
+                    done.append(f"{obj.name}（{parts} 段）")
+                else:
+                    model, _hrep = _build_from_st(st, context)
+                    _write_model(base, model, props.export_format, props, data_version)
+                    total_blocks += model.total_blocks
+                    done.append(f"{obj.name}（{model.total_blocks:,} 方块）")
+            except Exception as exc:  # 单个物体失败不打断整批
+                failed.append(f"{obj.name}: {exc}")
+                print(f"[mc_voxel] 批量导出：{obj.name} 失败 —— {exc}")
+
+        # 还原选择状态，别把用户的选择改乱了
+        bpy.ops.object.select_all(action="DESELECT")
+        if prev_active is not None:
+            try:
+                context.view_layer.objects.active = prev_active
+                prev_active.select_set(True)
+            except Exception:
+                pass
+
+        props.last_export_dir = folder
+        props.last_export_note = f"批量导出 {len(done)} 个物体 · 共 {total_blocks:,} 方块"
+        lines = [f"导出 {len(done)} 个物体，共 {total_blocks:,} 方块"]
+        lines += [f"· {d}" for d in done[:5]]
+        if len(done) > 5:
+            lines.append(f"… 还有 {len(done) - 5} 个")
+        if failed:
+            lines.append(f"失败 {len(failed)} 个，详见 Console")
+        _notify("批量导出完成", lines)
+        print(f"[mc_voxel] 批量导出完成：{len(done)} 个成功，{len(failed)} 个失败")
+        for f in failed:
+            print(f"[mc_voxel]   ✗ {f}")
+        if not done:
+            self.report({"ERROR"}, "全部失败，看 Console")
+            return {"CANCELLED"}
+        self.report({"WARNING" if failed else "INFO"}, props.last_export_note)
+        return {"FINISHED"}
+
+
 _AXIS_INDEX = {"X": 0, "Y": 1, "Z": 2}
 _AXIS_NAME = {"X": "长", "Y": "高", "Z": "宽"}
 
@@ -738,6 +838,7 @@ _CLASSES = (
     MCVOXEL_OT_detect_jar,
     MCVOXEL_OT_open_panel,
     MCVOXEL_OT_open_folder,
+    MCVOXEL_OT_export_all,
 )
 
 

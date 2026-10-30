@@ -100,6 +100,7 @@ def build_voxel_model(
     seal_axis=None,
     seal_lo: bool = False,
     seal_hi: bool = False,
+    noise: int = 0,
     max_voxels: int = 64_000_000,
 ) -> VoxelModel:
     """网格 -> VoxelModel。
@@ -112,6 +113,9 @@ def build_voxel_model(
     no_floating_gravity : 悬空的沙子/沙砾换成近似色，见 core/gravity.py
     texture_match : 色板带纹理 std 时，按局部颜色粗糙度匹配
                   （平的面配平纹理的方块）。色板没带 std 时自动不起作用。
+    noise : 0-100。同一颜色区域里按这个百分比改用「次优」方块，用来打散
+            大面积墙面的单调感。选谁由体素坐标哈希决定，同一模型每次结果
+            一致，不会引入随机闪烁。
     seal_axis / seal_lo / seal_hi : 分块导出专用。沿 seal_axis 的 low / high
                   端面补一层"虚拟封盖"再做内部填充——分段后切面上没有表面，
                   实心模型会被 flood fill 判成空心。封盖只盖"该截面上模型
@@ -175,6 +179,7 @@ def build_voxel_model(
     # 匹配走精确 ΔE 而不是 32³ LUT：唯一色通常只有几十到几百个，
     # 精确算一遍是毫秒级，却完全消除了 LUT 把查询色吸附到格子中心
     # 带来的选色偏差（两个同色方块在 LUT 里可能投给第三个方块）。
+    bin_centers = None
     if texture_match and getattr(palette, "has_texture_info", False):
         vox_std = neighborhood_std(xs, ys, zs, rgb, size)
         target_std = texture_targets_by_color(uniq_keys, inverse, vox_std)
@@ -185,18 +190,35 @@ def build_voxel_model(
     else:
         matched = palette.nearest_batch(uniq_rgb, exact=True)
 
-    # 每个唯一色一个调色板下标，再靠 inverse 一次散射到全部体素。
-    # 老写法逐体素做 Python 循环（400 万方块 = 400 万次字典查找 + tuple
-    # 构造，实测 1.5-3 秒），是整条流水线里最大的一笔白开销。
-    state_index = {}
-    per_color = np.empty(len(uniq_keys), dtype=np.int64)
-    for i, name in enumerate(matched):
-        idx = state_index.get(name)
-        if idx is None:
-            idx = model.add_state(BlockState(name))
-            state_index[name] = idx
-        per_color[i] = idx
-    out = per_color[inverse]
+    if noise > 0 and len(uniq_keys) and hasattr(palette, "nearest_topk"):
+        # 噪声：同色区域里按比例换成绩次优的方块，打散大面墙的单调感。
+        # 用体素坐标哈希而不是随机数，保证同一模型每次导出一致。
+        top = palette.nearest_topk(uniq_rgb, stds=bin_centers, k=2)
+        h = (
+            (np.asarray(xs, dtype=np.int64) * 73856093)
+            ^ (np.asarray(ys, dtype=np.int64) * 19349663)
+            ^ (np.asarray(zs, dtype=np.int64) * 83492791)
+        ) % 100
+        use_alt = h < int(noise)
+        chosen = np.where(use_alt, top[1][inverse], top[0][inverse])
+        uniq_block, inv_block = np.unique(chosen, return_inverse=True)
+        state_of = np.empty(len(uniq_block), dtype=np.int64)
+        for i, bi in enumerate(uniq_block):
+            state_of[i] = model.add_state(BlockState(palette.names[int(bi)]))
+        out = state_of[inv_block]
+    else:
+        # 每个唯一色一个调色板下标，再靠 inverse 一次散射到全部体素。
+        # 老写法逐体素做 Python 循环（400 万方块 = 400 万次字典查找 + tuple
+        # 构造，实测 1.5-3 秒），是整条流水线里最大的一笔白开销。
+        state_index = {}
+        per_color = np.empty(len(uniq_keys), dtype=np.int64)
+        for i, name in enumerate(matched):
+            idx = state_index.get(name)
+            if idx is None:
+                idx = model.add_state(BlockState(name))
+                state_index[name] = idx
+            per_color[i] = idx
+        out = per_color[inverse]
 
     model.blocks[hit] = out
 
