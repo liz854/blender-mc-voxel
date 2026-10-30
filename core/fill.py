@@ -54,6 +54,35 @@ def fill_interior(solid: np.ndarray, max_iter: int = None) -> np.ndarray:
 _DIRS = ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1))
 
 
+def fill_interior_2d(solid: np.ndarray) -> np.ndarray:
+    """二维版的实心化：把被围住的空洞填实。
+
+    分块导出补截面封盖要用。不能拿三维版凑：厚度只有 1 的维度上
+    `outside_mask` 的两侧种子会退化成同一层，所有空气都会被判成外部。
+    """
+    solid = np.asarray(solid, dtype=bool)
+    if solid.size == 0 or solid.all():
+        return solid.copy()
+    h, w = solid.shape
+    air = ~solid
+    outside = np.zeros_like(solid)
+    outside[0, :] |= air[0, :]
+    outside[-1, :] |= air[-1, :]
+    outside[:, 0] |= air[:, 0]
+    outside[:, -1] |= air[:, -1]
+
+    for _ in range(max(h, w) + 2):
+        nxt = outside.copy()
+        nxt[1:, :] |= outside[:-1, :] & air[1:, :]
+        nxt[:-1, :] |= outside[1:, :] & air[:-1, :]
+        nxt[:, 1:] |= outside[:, :-1] & air[:, 1:]
+        nxt[:, :-1] |= outside[:, 1:] & air[:, :-1]
+        if np.array_equal(nxt, outside):
+            break
+        outside = nxt
+    return solid | ~outside
+
+
 def flood_colors(mask: np.ndarray, rgb: np.ndarray, max_iter: int = None):
     """把表面颜色扩散到被填充的内部体素。
 

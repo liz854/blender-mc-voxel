@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .fill import fill_interior, flood_colors, neighborhood_std
+from .fill import fill_interior, fill_interior_2d, flood_colors, neighborhood_std
 from .gravity import enforce_gravity_support
 from .ir import BlockState, VoxelModel
 from .palette import TEXTURE_BIN_CENTERS, texture_bin
@@ -64,6 +64,27 @@ def texture_targets_by_color(uniq_keys, inverse, vox_std):
     return target
 
 
+def _apply_seal(mask, axis, seal_lo: bool, seal_hi: bool):
+    """给分块后的截面补一层虚拟封盖，返回新的 mask。
+
+    分段独立体素化时，切面上没有三角形，实心模型的内腔会被 flood fill
+    判成"连通外界"从而留空。封盖只在**该截面上模型真占用的投影区域**
+    （沿 axis 是否有任何体素）上补，不会凭空填满整面。
+    """
+    out = np.array(mask, dtype=bool, copy=True)
+    # 截面投影 = 该截面上模型占用的区域。注意侧墙的投影是个"方框"，
+    # 中间是空的——直接用方框封盖，内腔照样能从中间漏出去。所以要把
+    # 投影里的孔洞填实（二维内部填充）。
+    proj = fill_interior_2d(mask.any(axis=axis))
+    for flag, idx in ((seal_lo, 0), (seal_hi, -1)):
+        if not flag:
+            continue
+        sl = [slice(None)] * 3
+        sl[axis] = idx
+        out[tuple(sl)] |= proj
+    return out
+
+
 def build_voxel_model(
     verts,
     tris,
@@ -76,6 +97,9 @@ def build_voxel_model(
     progress=None,
     no_floating_gravity: bool = True,
     texture_match: bool = True,
+    seal_axis=None,
+    seal_lo: bool = False,
+    seal_hi: bool = False,
     max_voxels: int = 64_000_000,
 ) -> VoxelModel:
     """网格 -> VoxelModel。
@@ -88,6 +112,11 @@ def build_voxel_model(
     no_floating_gravity : 悬空的沙子/沙砾换成近似色，见 core/gravity.py
     texture_match : 色板带纹理 std 时，按局部颜色粗糙度匹配
                   （平的面配平纹理的方块）。色板没带 std 时自动不起作用。
+    seal_axis / seal_lo / seal_hi : 分块导出专用。沿 seal_axis 的 low / high
+                  端面补一层"虚拟封盖"再做内部填充——分段后切面上没有表面，
+                  实心模型会被 flood fill 判成空心。封盖只盖"该截面上模型
+                  真正占用的投影区域"，不会凭空填满整面。封盖层会保留在
+                  结果里，因此相邻两段在切面处重叠一层（摆放时叠加无害）。
     max_voxels : 网格体积上限（默认 6400 万格 ≈ 400³），超了直接报错而不是 OOM
     """
     verts = np.asarray(verts, dtype=np.float64)
@@ -115,6 +144,8 @@ def build_voxel_model(
         progress("内部填充" if solid else "整理外壳")
 
     if solid:
+        if seal_axis is not None and (seal_lo or seal_hi):
+            mask = _apply_seal(mask, seal_axis, seal_lo, seal_hi)
         final = fill_interior(mask)
         rgb = flood_colors(final, rgb)
     else:

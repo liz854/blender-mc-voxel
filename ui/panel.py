@@ -106,6 +106,7 @@ class MCVOXEL_PT_panel(bpy.types.Panel):
         box = layout.box()
         box.label(text="导出", icon="EXPORT")
         box.prop(props, "export_format")
+        box.prop(props, "auto_split")
         box.prop(props, "dimension")
         box.prop(props, "strict_height")
 
@@ -145,6 +146,13 @@ class MCVOXEL_PT_panel(bpy.types.Panel):
         row.operator("mc_voxel.voxelize", icon="MOD_BUILD")
         row.operator("mc_voxel.preview", icon="RESTRICT_VIEW_OFF")
         layout.operator("mc_voxel.export", icon="FILE_TICK")
+
+        # 上次导出的回读：state report 只在状态栏闪一下，看不见就以为没导出
+        if props.last_export_note:
+            res = layout.box()
+            res.label(text="上次导出", icon="CHECKMARK")
+            res.label(text=props.last_export_note)
+            res.operator("mc_voxel.open_folder", icon="FILE_FOLDER")
 
 
 class MCVOXEL_MT_menu(bpy.types.Menu):

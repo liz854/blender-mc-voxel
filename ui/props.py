@@ -160,6 +160,23 @@ class MCVoxelProps(bpy.types.PropertyGroup):
         default=2_000_000,
         min=1000,
     )
+    # ---- 导出结果回读（面板上看得见，不用翻状态栏） ----
+    last_export_note: bpy.props.StringProperty(
+        name="上次导出",
+        description="最近一次成功导出的文件与统计，只读",
+        default="",
+    )
+    last_export_dir: bpy.props.StringProperty(
+        name="上次导出目录",
+        description="用来打开所在文件夹，只读",
+        default="",
+    )
+    # ---- 超上限时自动分块 ----
+    auto_split: bpy.props.BoolProperty(
+        name="超上限自动分块",
+        description="模型太大时按最长轴切成几段分别导出，每段独立体素化，峰值内存只按单段算",
+        default=True,
+    )
 
 
 def register():

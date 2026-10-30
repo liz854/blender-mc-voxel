@@ -12,6 +12,7 @@ from ..core import build as core_build
 from ..core import limits
 from ..core import litematic as core_litematic
 from ..core import mcver, mesh_data, schem as core_schem, structure as core_structure
+from ..core import tiles as core_tiles
 from ..core.ir import VoxelModel
 from ..core.palette import BlockPalette, load_fallback_palette, parse_block_filter
 from ..core.pack import ResourcePack
@@ -195,8 +196,12 @@ def _active_mesh(context):
     raise RuntimeError("没有选中任何物体：先在 3D 视图里左键点一下模型")
 
 
-def _build_from_active(context):
-    """体素化当前物体。返回 (model, palette, 限高报告)。"""
+def _prepare(context):
+    """读当前物体的网格数据、算好实际方块尺寸、建好色板。
+
+    体素化前的公共准备。抽出来是因为分块导出要对同一份数据切好几刀，
+    没必要每段都重读一遍网格、重算一遍限高、重建一次色板。
+    """
     props = _scene(context).mc_voxel
     obj = _active_mesh(context)
 
@@ -223,15 +228,48 @@ def _build_from_active(context):
             props.block_size = fitted  # 写回，面板上能看见实际用的倍率
             block_size = fitted
 
+    return {
+        "props": props,
+        "verts": verts,
+        "tris": tris,
+        "colors": colors,
+        "jar": jar,
+        "dimension": dimension,
+        "block_size": block_size,
+        "palette": _get_palette(props),
+        "autofit": autofit,
+    }
+
+
+def _height_check(st, size_y):
+    """世界限高检查。超出的方块 Litematica 会静默跳过（不报错、直接缺块）。"""
+    report = limits.check_height(
+        size_y,
+        dimension=st["dimension"],
+        jar_path=st["jar"],
+        block_size=st["block_size"],
+    )
+    report.autofit = st["autofit"]
+    print(f"[mc_voxel] 限高：{report.message}")
+    if report.level == "error":
+        if getattr(st["props"], "strict_height", True):
+            raise RuntimeError(report.message)
+        print("[mc_voxel] 已关闭严格限高，继续导出（超出部分摆不出来）")
+        report.level = "warn"
+    return report
+
+
+def _build_from_st(st, context):
+    """用已经准备好的数据体素化一次（单块）。返回 (model, 限高报告)。"""
+    props = st["props"]
     prog = _Progress(getattr(context, "window_manager", None))
     try:
-        palette = _get_palette(props)
         model = core_build.build_voxel_model(
-            verts,
-            tris,
-            colors,
-            block_size=block_size,
-            palette=palette,
+            st["verts"],
+            st["tris"],
+            st["colors"],
+            block_size=st["block_size"],
+            palette=st["palette"],
             solid=props.solid_fill,
             no_floating_gravity=getattr(props, "gravity_support", True),
             progress=prog,
@@ -241,24 +279,135 @@ def _build_from_active(context):
 
     if model.total_blocks > props.max_blocks:
         raise RuntimeError(
-            f"方块数 {model.total_blocks} 超过上限 {props.max_blocks}，调大方块尺寸再试"
+            f"方块数 {model.total_blocks} 超过上限 {props.max_blocks}，"
+            "调大方块尺寸，或打开「超上限自动分块」"
         )
+    return model, _height_check(st, model.size[1])
 
-    # 限高：超出的方块 Litematica 会静默跳过（不报错、直接缺块），所以主动挡。
-    report = limits.check_height(
-        model.size[1],
-        dimension=dimension,
-        jar_path=jar,
-        block_size=block_size,
+
+def _build_from_active(context):
+    """体素化当前物体。返回 (model, palette, 限高报告)。"""
+    st = _prepare(context)
+    model, report = _build_from_st(st, context)
+    return model, st["palette"], report
+
+
+def _build_segments(st, origin, size, axis, parts, context):
+    """按轴把整体网格切成 parts 段，逐段体素化。
+
+    分块的意义是**峰值内存**：体素网格是稠密的，400³ 要 7 GB，切开只按
+    单段算。所有段共用同一个 origin 和 block_size，格子边界严格对齐，
+    拼回去不会错位。代价是每段独立做内部填充，切面上多一层壳——投影本来
+    就分块摆放，拼起来看不出来。
+    """
+    props = st["props"]
+    verts, tris, colors = st["verts"], st["tris"], st["colors"]
+    bs = st["block_size"]
+
+    # 高度按**整体**判：每段单独都矮，但拼起来照样可能超限高
+    _height_check(st, size[1])
+
+    segments = core_tiles.plan_segments(size, origin, bs, axis, parts)
+    print(
+        f"[mc_voxel] 网格 {'×'.join(map(str, size))} 超过单段上限，"
+        f"按 {'XYZ'[axis]} 轴切成 {parts} 段"
     )
-    report.autofit = autofit
-    print(f"[mc_voxel] 限高：{report.message}")
-    if report.level == "error":
-        if getattr(props, "strict_height", True):
-            raise RuntimeError(report.message)
-        print("[mc_voxel] 已关闭严格限高，继续导出（超出部分摆不出来）")
-        report.level = "warn"
-    return model, palette, report
+
+    models = []
+    prog = _Progress(getattr(context, "window_manager", None), total=len(segments) * 4)
+    try:
+        for i, (seg_origin, seg_size, start, stop) in enumerate(segments):
+            sub = core_tiles.select_triangles(verts, tris, origin, bs, axis, start, stop)
+            model = core_build.build_voxel_model(
+                verts,
+                sub,
+                colors,
+                block_size=bs,
+                palette=st["palette"],
+                solid=props.solid_fill,
+                origin=seg_origin,
+                size=seg_size,
+                no_floating_gravity=getattr(props, "gravity_support", True),
+                # 内部切面补虚拟封盖，否则实心模型的中间段会被判成空心。
+                # 最外两段贴的是模型真实的顶/底面，不用封。
+                seal_axis=axis,
+                seal_lo=i > 0,
+                seal_hi=i < len(segments) - 1,
+                progress=prog,
+            )
+            if model.total_blocks > props.max_blocks:
+                raise RuntimeError(
+                    f"第 {len(models) + 1} 段就有 {model.total_blocks} 个方块，"
+                    f"超过上限 {props.max_blocks}，调大方块尺寸再试"
+                )
+            models.append(model)
+    finally:
+        prog.end()
+    return models
+
+
+def _write_model(path, model, fmt, props, data_version):
+    """按格式落盘（单段 / 分块共用）。"""
+    if fmt == "LITEMATIC":
+        core_litematic.write_litematic(
+            model,
+            path,
+            mc_data_version=data_version,
+            region_size=props.region_size,
+            name=os.path.splitext(os.path.basename(path))[0],
+            author=props.author or "mc_voxel_export",
+        )
+    elif fmt == "SCHEM":
+        core_schem.write_schem(model, path, data_version)
+    else:
+        core_structure.write_structure_nbt(model, path, data_version)
+
+
+def _notify(title, lines, icon="FILE_TICK"):
+    """导出成功后的可见反馈。
+
+    self.report 只在状态栏闪一下，浮窗面板里基本看不到——用户根本不知道
+    到底写出来没有。这里弹一个带「打开所在文件夹」的提示框；无头模式
+    （-b）没有窗口，静默跳过。
+    """
+    wm = getattr(bpy.context, "window_manager", None)
+    # 后台模式（blender -b）下 window_manager 还在、context.window 也不是
+    # None，但调 popup_menu 会让 Blender 直接段错误（C 层崩，try 拦不住）。
+    # 只能用 bpy.app.background 判断。
+    if bpy.app.background or wm is None or getattr(bpy.context, "window", None) is None:
+        return
+
+    def draw(menu, context):
+        col = menu.layout.column(align=True)
+        for ln in lines:
+            col.label(text=ln)
+        col.separator()
+        col.operator("mc_voxel.open_folder", icon="FILE_FOLDER")
+
+    try:
+        wm.popup_menu(draw, title=title, icon=icon)
+    except Exception:
+        pass
+
+
+class MCVOXEL_OT_open_folder(bpy.types.Operator):
+    """打开上次导出文件所在的文件夹"""
+
+    bl_idname = "mc_voxel.open_folder"
+    bl_label = "打开所在文件夹"
+
+    def execute(self, context):
+        props = _scene(context).mc_voxel
+        folder = props.last_export_dir
+        if not folder or not os.path.isdir(folder):
+            self.report({"ERROR"}, "还没有导出记录，或目录已经不存在")
+            return {"CANCELLED"}
+        try:
+            bpy.ops.wm.path_open(filepath=folder)
+        except Exception as exc:
+            self.report({"ERROR"}, f"打不开文件夹：{exc}")
+            return {"CANCELLED"}
+        return {"FINISHED"}
 
 
 class MCVOXEL_OT_voxelize(bpy.types.Operator):
@@ -339,11 +488,6 @@ class MCVOXEL_OT_export(bpy.types.Operator, ExportHelper):
 
     def execute(self, context):
         props = _scene(context).mc_voxel
-        try:
-            model, _palette, hrep = _build_from_active(context)
-        except Exception as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
 
         data_version = props.mc_data_version or 0
         if not data_version:
@@ -358,36 +502,62 @@ class MCVOXEL_OT_export(bpy.types.Operator, ExportHelper):
 
         path = bpy.path.abspath(self.filepath)
         fmt = props.export_format
+
         try:
-            if fmt == "LITEMATIC":
-                core_litematic.write_litematic(
-                    model,
-                    path,
-                    mc_data_version=data_version,
-                    region_size=props.region_size,
-                    name=os.path.splitext(os.path.basename(path))[0],
-                    author=props.author or "mc_voxel_export",
-                )
-            elif fmt == "SCHEM":
-                core_schem.write_schem(model, path, data_version)
+            st = _prepare(context)
+            origin, size = core_build.grid_from_bounds(st["verts"], st["block_size"])
+            axis, parts = (0, 1)
+            if getattr(props, "auto_split", True):
+                axis, parts = core_tiles.plan_parts(size, core_tiles.DEFAULT_PART_VOXELS)
+
+            if parts > 1:
+                # 体积超过单段上限：切段分别体素化、分别落盘
+                models = _build_segments(st, origin, size, axis, parts, context)
+                stem, ext = os.path.splitext(path)
+                names = []
+                for i, model in enumerate(models):
+                    seg_path = stem + core_tiles.part_suffix(axis, i, parts) + (ext or "")
+                    _write_model(seg_path, model, fmt, props, data_version)
+                    names.append(os.path.basename(seg_path))
+                total = sum(m.total_blocks for m in models)
+                note = f"分 {parts} 段 · 共 {total:,} 方块"
+                lines = [
+                    f"已写出 {parts} 个文件，共 {total:,} 方块",
+                    f"按 {'XYZ'[axis]} 轴切分，文件名带后缀",
+                ]
+                lines += [f"· {n}" for n in names[:4]]
+                if len(names) > 4:
+                    lines.append(f"… 还有 {len(names) - 4} 个")
+                warn = ""
             else:
-                core_structure.write_structure_nbt(model, path, data_version)
+                model, hrep = _build_from_st(st, context)
+                _write_model(path, model, fmt, props, data_version)
+                dims = "×".join(map(str, model.size))
+                note = f"{os.path.basename(path)} · {model.total_blocks:,} 方块 · {dims} 格"
+                lines = [f"已写出 {os.path.basename(path)}", f"{model.total_blocks:,} 方块 · {dims} 格"]
+                if hrep.autofit:
+                    lines.append(hrep.autofit)
+                warn = hrep.message if hrep.level == "warn" else ""
+                if warn:
+                    lines.append(warn)
+                if fmt == "STRUCTURE" and max(model.size) > 48:
+                    warn = (
+                        f"结构方块界面最大只能填 48，当前 {max(model.size)} 会填不进去"
+                    )
+                    lines.append(warn)
+                    print(f"[mc_voxel] {warn}")
         except Exception as exc:
-            self.report({"ERROR"}, f"写出失败：{exc}")
+            self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
 
-        msg = f"已写出 {path}（{model.total_blocks} 方块）"
-        if hrep.autofit:
-            msg += f"；{hrep.autofit}"
-        if fmt == "STRUCTURE" and max(model.size) > 48:
-            print(
-                "[mc_voxel] 结构方块 .nbt 文件本身没限高，但游戏里的结构方块界面"
-                f"最大只能填 48，当前 {max(model.size)} 会填不进去"
-            )
-        if hrep.level == "warn":
-            self.report({"WARNING"}, f"{msg}。{hrep.message}")
+        props.last_export_dir = os.path.dirname(path)
+        props.last_export_note = note
+        print(f"[mc_voxel] 导出完成：{note}")
+        _notify("导出完成", lines)
+        if warn:
+            self.report({"WARNING"}, f"{note}。{warn}")
         else:
-            self.report({"INFO"}, msg)
+            self.report({"INFO"}, note)
         return {"FINISHED"}
 
 
@@ -567,6 +737,7 @@ _CLASSES = (
     MCVOXEL_OT_render_preview,
     MCVOXEL_OT_detect_jar,
     MCVOXEL_OT_open_panel,
+    MCVOXEL_OT_open_folder,
 )
 
 
