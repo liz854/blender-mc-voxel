@@ -17,7 +17,7 @@ TEXTURE_KEYS = ("all", "top", "side", "texture", "particle", "end", "bottom")
 
 # 改了解析逻辑（过滤规则、tint、取纹理的优先级、缓存里存 std）就 +1，
 # 让旧缓存失效。否则代码修好了、缓存还是旧结果，问题看起来"没修好"。
-CACHE_VERSION = 11
+CACHE_VERSION = 12
 
 # 这些方块的纹理是灰度图，游戏里按生物群系 tint 上色。
 # 不乘上 tint，草方块和树叶会变成灰色，体素配色直接废掉。
@@ -269,8 +269,41 @@ def _apply_tint(block_name: str, rgb: Tuple[int, int, int]) -> Tuple[int, int, i
 # "平均色最接近的方块"完全正当，挡掉等于凭空少掉一批好素材。
 # 真正该挡的只有一类：游戏根本不让放在那个位置的。
 NON_BUILDING_BLOCKS = {
+    # ---- 物理上放不下 ----
     # 仙人掌要求四面都不能挨着其他方块，埋进墙里连放置都被拒绝
     "minecraft:cactus",
+
+    # ---- 用户点名排除（2026-10-30）----
+    # 这些是"打开界面 / 触发机制 / 不可破坏"的方块：摆进作品里会刷怪、执行命令、
+    # 需要权限、或者根本拆不掉。不是审美判断，是用户明确要求不要。
+    "minecraft:spawner",                  # 刷怪笼：真的会刷怪
+    "minecraft:trial_spawner",            # 试炼刷怪笼
+    "minecraft:vault",                    # 宝库：要用试炼钥匙开、吐战利品
+    "minecraft:command_block",            # 命令方块 / 链式 / 循环
+    "minecraft:chain_command_block",
+    "minecraft:repeating_command_block",
+    "minecraft:structure_block",          # 结构方块：保存/加载局部结构
+    "minecraft:jigsaw",                   # 拼图方块：生成结构用
+    "minecraft:bedrock",                  # 基岩：放下去拆不掉
+    "minecraft:test_block",               # 测试方块 / 测试实例方块
+    "minecraft:test_instance_block",
+
+    # ---- 容器与站台 ----
+    # 其中砂轮/讲台/切石机/箱子/陷阱箱/堆肥桶/炼药锅/酿造台/附魔台/铁砧
+    # 本来就被"整方块"那道筛子挡掉了（模型有空隙或斜面），列在这里是为了
+    # 将来放宽整方块筛选时不会偷偷混回来。
+    "minecraft:chest",
+    "minecraft:trapped_chest",
+    "minecraft:grindstone",
+    "minecraft:lectern",
+    "minecraft:stonecutter",
+    "minecraft:composter",
+    "minecraft:cauldron",
+    "minecraft:brewing_stand",
+    "minecraft:enchanting_table",
+    "minecraft:anvil",
+    "minecraft:chipped_anvil",
+    "minecraft:damaged_anvil",
 }
 
 # 靠后缀/前缀排除的整方块——**现在是空的**。

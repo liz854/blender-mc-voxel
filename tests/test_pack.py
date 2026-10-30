@@ -189,14 +189,14 @@ def test_only_unplaceable_blocks_filtered(tmp_path):
             "minecraft:stone": {},
             "minecraft:cactus": {},
             "minecraft:crafting_table": {},
-            "minecraft:chest": {},
+            "minecraft:furnace": {},
             "minecraft:bookshelf": {},
         },
     )
     colors = pack.load_block_colors(jar)
     assert "minecraft:stone" in colors
     assert "minecraft:cactus" not in colors, "仙人掌在墙里放不下去，必须挡"
-    for ok in ("minecraft:crafting_table", "minecraft:chest", "minecraft:bookshelf"):
+    for ok in ("minecraft:crafting_table", "minecraft:furnace", "minecraft:bookshelf"):
         assert ok in colors, f"{ok} 能正常放置，不该被挡"
 
 
@@ -271,10 +271,18 @@ def test_real_jar_parses():
     for bad in ("minecraft:oak_fence", "minecraft:stone_slab", "minecraft:oak_door"):
         assert bad not in colors, f"{bad} 不是整方块，不该出现在调色板里"
 
-    # 功能方块能正常放置，必须保留（用户 2026-10-30 明确要求）
+    # 普通功能方块能正常放置，必须保留
     for ok in ("minecraft:bookshelf", "minecraft:crafting_table", "minecraft:furnace",
-               "minecraft:beacon", "minecraft:command_block"):
+               "minecraft:beacon", "minecraft:barrel"):
         assert ok in colors, f"{ok} 能正常放置，不该被剔掉"
+
+    # 用户点名不要的（会刷怪/执行命令/拆不掉）必须挡
+    for bad in ("minecraft:spawner", "minecraft:trial_spawner", "minecraft:vault",
+                "minecraft:command_block", "minecraft:chain_command_block",
+                "minecraft:repeating_command_block", "minecraft:structure_block",
+                "minecraft:jigsaw", "minecraft:bedrock",
+                "minecraft:test_block", "minecraft:test_instance_block"):
+        assert bad not in colors, f"{bad} 按用户要求应排除"
 
     # 树叶/釉面陶瓦保留：颜色就是它们的真实颜色
     for ok in ("minecraft:oak_leaves", "minecraft:red_glazed_terracotta",
@@ -406,24 +414,54 @@ def test_texture_std_filter_is_off_by_default():
         assert default is None, f"{fn.__name__} 的 max_texture_std 默认应该是 None"
 
 
-def test_mechanism_blocks_are_kept():
-    """功能方块（合成器、结构方块、命令方块、刷怪笼）都要保留。
+def test_ordinary_functional_blocks_kept():
+    """普通功能方块（书架、工作台、熔炉、信标、木桶）都要保留。
 
-    它们都能正常放置，作为"平均色最接近的方块"完全正当。
-    以前挡住它们只是因为"这些不是建材"——那是审美判断，不归这个项目管。
+    它们能正常放置，作为"平均色最接近的方块"完全正当。
     """
     for name in (
-        "minecraft:crafter",
-        "minecraft:structure_block",
-        "minecraft:command_block",
-        "minecraft:beacon",
-        "minecraft:spawner",
         "minecraft:bookshelf",
         "minecraft:crafting_table",
         "minecraft:furnace",
+        "minecraft:beacon",
+        "minecraft:barrel",
+        "minecraft:loom",
+        "minecraft:crafter",
     ):
         assert pack._is_building_block(name), f"{name} 能正常放置，不该被挡"
-    # 唯一该挡的
-    assert not pack._is_building_block("minecraft:cactus")
 
+
+def test_user_excluded_blocks():
+    """用户 2026-10-30 点名排除的方块：会刷怪 / 执行命令 / 需要权限 / 拆不掉。
+
+    这批不是审美判断，是用户明确要求。其中砂轮、讲台、切石机、箱子、铁砧等
+    本来就被"整方块"筛子挡住了（模型有空隙或斜面），列进黑名单是为了将来
+    放宽整方块筛选时不会偷偷混回来。
+    """
+    for name in (
+        "minecraft:spawner",
+        "minecraft:trial_spawner",
+        "minecraft:vault",
+        "minecraft:command_block",
+        "minecraft:chain_command_block",
+        "minecraft:repeating_command_block",
+        "minecraft:structure_block",
+        "minecraft:jigsaw",
+        "minecraft:bedrock",
+        "minecraft:test_block",
+        "minecraft:test_instance_block",
+        "minecraft:chest",
+        "minecraft:trapped_chest",
+        "minecraft:grindstone",
+        "minecraft:lectern",
+        "minecraft:stonecutter",
+        "minecraft:composter",
+        "minecraft:cauldron",
+        "minecraft:brewing_stand",
+        "minecraft:enchanting_table",
+        "minecraft:anvil",
+        "minecraft:chipped_anvil",
+        "minecraft:damaged_anvil",
+    ):
+        assert not pack._is_building_block(name), f"{name} 按用户要求应排除"
 
