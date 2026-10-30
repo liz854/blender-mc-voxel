@@ -96,6 +96,22 @@ def drop_filter(text: str, name: str) -> str:
     return ", ".join(t for t in filter_tokens(text) if t.lower() != low)
 
 
+def _fill_empty(lut: np.ndarray) -> None:
+    """空格用 3×3×3 邻域填充（正常构建不会留空，兜底用）。原地修改。"""
+    if (lut != NO_MATCH).all():
+        return
+    for _ in range(4):
+        empty = lut == NO_MATCH
+        if not empty.any():
+            break
+        best = np.full_like(lut, NO_MATCH)
+        for axis in range(3):
+            for shift in (-1, 1):
+                cand = np.roll(lut, shift, axis=axis)
+                best = np.where((best == NO_MATCH) & (cand != NO_MATCH), cand, best)
+        lut[...] = np.where(empty, best, lut)
+
+
 def texture_bin(std: float) -> int:
     """目标 std -> 档位序号（0..len(CENTERS)-1）。"""
     return int(np.searchsorted(TEXTURE_BIN_EDGES, float(std), side="right"))
@@ -144,17 +160,37 @@ class BlockPalette:
         self.labs = srgb_to_lab(self.rgbs)  # (N,3)
         self.texture_weight = float(texture_weight)
         self.stds = np.asarray(std_vals, dtype=np.float64)  # (N,)
-        self.lut = self._build_lut()
-        self.luts = (
-            self._build_std_luts() if self._has_texture_info() else None
+        # 色板里至少要有一平一花才值得开纹理匹配
+        self.has_texture_info = bool(self.stds.size) and (
+            float(self.stds.max()) - float(self.stds.min()) > 1.0
         )
-        self._fill_empty()
+        # LUT 按需构建：build_voxel_model 走精确 ΔE 根本不用 LUT，
+        # 而建一张 32³ LUT 要 138 ms（带纹理 4 张共 725 ms）。UI 每次
+        # 导出/预览都会新建色板，提前建就是每次白花 0.7 秒。
+        self._lut = None
+        self._luts = None
 
-    def _has_texture_info(self) -> bool:
-        """色板里至少要有一平一花才值得开纹理匹配。"""
-        return bool(self.stds.size) and float(self.stds.max()) - float(self.stds.min()) > 1.0
+    # ---- LUT（按需构建） ----
+    @property
+    def lut(self) -> np.ndarray:
+        if self._lut is None:
+            lut = self._build_lut()
+            _fill_empty(lut)
+            self._lut = lut
+        return self._lut
 
-    # ---- LUT ----
+    @property
+    def luts(self):
+        """每档目标粗糙度一张 LUT；色板没有纹理信息时返回 None。"""
+        if not self.has_texture_info:
+            return None
+        if self._luts is None:
+            luts = self._build_std_luts()
+            for lut in luts:
+                _fill_empty(lut)
+            self._luts = luts
+        return self._luts
+
     def _bin_centers(self) -> np.ndarray:
         """32³ 个格子中心的 Lab。"""
         l = (np.arange(LUT_N) + 0.5) / LUT_N * 100.0
@@ -188,25 +224,6 @@ class BlockPalette:
             luts.append(out.reshape(LUT_N, LUT_N, LUT_N))
         return luts
 
-    def _fill_empty(self) -> None:
-        """空格用 3×3×3 邻域填充（正常构建不会留空，兜底用）。"""
-        luts = [self.lut] + (self.luts or [])
-        for lut in luts:
-            if (lut != NO_MATCH).all():
-                continue
-            for _ in range(4):
-                empty = lut == NO_MATCH
-                if not empty.any():
-                    break
-                best = np.full_like(lut, NO_MATCH)
-                for axis in range(3):
-                    for shift in (-1, 1):
-                        cand = np.roll(lut, shift, axis=axis)
-                        best = np.where(
-                            (best == NO_MATCH) & (cand != NO_MATCH), cand, best
-                        )
-                lut[...] = np.where(empty, best, lut)
-
     # ---- 查询 ----
     @staticmethod
     def _indices(lab) -> tuple:
@@ -217,25 +234,53 @@ class BlockPalette:
         return i, j, k
 
     def nearest_index(self, rgb, std=None):
-        lab = srgb_to_lab(np.asarray(rgb, dtype=np.float64))
-        i, j, k = self._indices(lab)
-        if std is not None and self.luts is not None:
-            return int(self.luts[texture_bin(std)][i, j, k])
-        return int(self.lut[i, j, k])
+        """最近方块的下标。单次查询，直接算精确 ΔE。
+
+        以前走 32³ LUT，但 LUT 把查询色吸附到格子中心，两个平均色相同的
+        方块可能一起输给第三个；单次查询本来就只要几十微秒，没必要为它
+        牺牲准确性。
+        """
+        lab = srgb_to_lab(np.asarray(rgb, dtype=np.float64).reshape(1, 3))
+        d = delta_e76(lab, self.labs[None, :, :])
+        if std is not None and self.has_texture_info:
+            d = d + self.texture_weight * np.abs(self.stds[None, :] - float(std))
+        return int(np.argmin(d[0]))
 
     def nearest(self, rgb, std=None) -> str:
         return self.names[self.nearest_index(rgb, std)]
 
-    def nearest_batch(self, rgbs, stds=None) -> list:
+    def nearest_batch(self, rgbs, stds=None, exact=False) -> list:
         """(K,3) 颜色 -> [block_name, …]
 
-        stds 给了且色板带纹理信息时，用对应档位的 LUT（纹理感知匹配）。
+        stds 给了且色板带纹理信息时，成本里加上纹理项。
+        exact=True 时不算 LUT、直接对所有方块算一遍 ΔE。用途：
+        批量匹配（唯一色数量有限）时避免 LUT 把查询色吸附到 32³ 格子
+        中心带来的选色偏差——两个平均色相同的方块在 LUT 里可能一起
+        输给第三个方块。单次查询仍然走 LUT，快得多。
         """
         arr = np.asarray(rgbs, dtype=np.float64)
         flat = arr.reshape(-1, 3)
         labs = srgb_to_lab(flat)
+        use_texture = stds is not None and self.has_texture_info
+
+        if exact:
+            penalty = None
+            if use_texture:
+                penalty = self.texture_weight * np.abs(
+                    self.stds[None, :] - np.asarray(stds, dtype=np.float64)[:, None]
+                )
+            idx = np.empty(len(labs), dtype=np.int64)
+            step = 1024
+            for start in range(0, len(labs), step):
+                chunk = labs[start : start + step]
+                d = delta_e76(chunk[:, None, :], self.labs[None, :, :])
+                if penalty is not None:
+                    d = d + penalty[start : start + step]
+                idx[start : start + step] = np.argmin(d, axis=1)
+            return [self.names[int(v)] for v in idx]
+
         i, j, k = self._indices(labs)
-        if stds is not None and self.luts is not None:
+        if use_texture:
             bins = [texture_bin(s) for s in stds]
             idx = np.asarray(
                 [self.luts[b][i[n], j[n], k[n]] for n, b in enumerate(bins)],
@@ -269,7 +314,7 @@ class BlockPalette:
         if not colors:
             return self
         stds = None
-        if self.luts is not None:
+        if self.has_texture_info:
             stds = {
                 n: float(s) for n, s in zip(self.names, self.stds) if n not in ban
             }

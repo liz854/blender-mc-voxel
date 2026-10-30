@@ -160,25 +160,6 @@ class MCVoxelProps(bpy.types.PropertyGroup):
         default=2_000_000,
         min=1000,
     )
-    # ---- 反向导入后的处理（方案 §12.2：两个开关，交给用户选） ----
-    smooth_shading: bpy.props.BoolProperty(
-        name="平滑着色",
-        description="只改法线，让方块表面看起来圆润。轮廓一个不差",
-        default=True,
-    )
-    remesh_smooth: bpy.props.BoolProperty(
-        name="磨圆（Remesh）",
-        description="真的重建成平滑曲面。代价是丢锐利边缘和颜色细节，只建议展示用",
-        default=False,
-    )
-    remesh_voxel_size: bpy.props.FloatProperty(
-        name="磨圆精度",
-        description="Remesh 的 Voxel Size。越小越细也越慢，0.5 大约是原始方块的一半",
-        default=0.5,
-        min=0.02,
-        soft_max=4.0,
-        precision=3,
-    )
 
 
 def register():

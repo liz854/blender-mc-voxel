@@ -95,10 +95,10 @@ def test_split_regions_longest_axis():
 
 def test_block_properties_are_strings():
     m = VoxelModel((1, 1, 1))
-    m.set(0, 0, 0, BlockState("minecraft:oak_stairs", {"facing": "north", "half": "bottom"}))
+    m.set(0, 0, 0, BlockState("minecraft:oak_door", {"facing": "north", "half": "lower"}))
     tree = build_litematic_tree(m, mc_data_version=DV)
     palette = tree["Regions"]["Region0"]["BlockStatePalette"]
-    entry = [p for p in palette if p["Name"] == "minecraft:oak_stairs"][0]
+    entry = [p for p in palette if p["Name"] == "minecraft:oak_door"][0]
     assert entry["Properties"]["facing"] == "north"
     assert isinstance(entry["Properties"]["half"], nbt.TAGString)
 

@@ -291,11 +291,6 @@ def main():
                             diff += 1
         check("逐块一致", diff == 0, f"diff={diff}")
 
-        # 再反向导入一遍
-        r = bpy.ops.mc_voxel.import_litematic(filepath=out)
-        imp = bpy.data.objects.get("MCVoxelImport")
-        check("operator import 读回成网格", r == {"FINISHED"} and imp is not None, str(r))
-
     # --- 6. 预设（方案 Sprint 4） ---
     r = bpy.ops.mc_voxel.preset(preset="PIXEL")
     check(
@@ -361,30 +356,6 @@ def main():
         f"scale_length=2.0 -> span {span3}",
     )
     unit.scale_length = 1.0
-
-    # --- 9. 反向导入的平滑两个开关（方案 §12.2） ---
-    if os.path.exists(out):
-        props.smooth_shading = True
-        props.remesh_smooth = False
-        bpy.ops.mc_voxel.import_litematic(filepath=out)
-        imp = [o for o in bpy.data.objects if o.name.startswith("MCVoxelImport")][-1]
-        check(
-            "平滑着色：不加修改器 + 面全平滑",
-            len(imp.modifiers) == 0 and all(p.use_smooth for p in imp.data.polygons),
-            f"mods={len(imp.modifiers)} smooth={imp.data.polygons[0].use_smooth if len(imp.data.polygons) else None}",
-        )
-
-        props.remesh_smooth = True
-        props.remesh_voxel_size = 0.4
-        bpy.ops.mc_voxel.import_litematic(filepath=out)
-        imp2 = [o for o in bpy.data.objects if o.name.startswith("MCVoxelImport")][-1]
-        remesh = [m for m in imp2.modifiers if m.type == "REMESH"]
-        check(
-            "磨圆：加 REMESH 且精度生效",
-            len(remesh) == 1 and abs(remesh[0].voxel_size - 0.4) < 1e-6,
-            f"mods={[m.type for m in imp2.modifiers]}",
-        )
-        props.remesh_smooth = False
 
     # --- 10. 世界限高 ---
     from bl_ext.user_default.mc_voxel_export.core import limits

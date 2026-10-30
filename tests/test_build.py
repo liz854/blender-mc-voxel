@@ -77,19 +77,22 @@ def test_texture_match_flat_region_picks_smooth_block():
 def test_texture_targets_low_quantile_ignores_boundary():
     """颜色分界处的体素邻域横跨两色、std 虚高；同色区域取 25% 分位
     必须仍判"平"，否则墙色分界线会长出花纹理斑点。"""
-    u8 = np.full((10, 1, 3), 200, dtype=np.uint8)
-    u8[:, 0, 0] = 40  # 随便让每行同色
+    u8 = np.full((10, 3), 200, dtype=np.uint8)
+    u8[:, 0] = 40
     std = np.array([0.0] * 8 + [40.0, 40.0])
-    uniq, target = core_build.texture_targets_by_color(u8, std)
+    uniq, inverse = np.unique(core_build.pack_rgb_keys(u8), return_inverse=True)
+    target = core_build.texture_targets_by_color(uniq, inverse, std)
     assert len(uniq) == 1
     assert target[0] == pytest.approx(0.0)  # 25% 分位吃掉两个高值
 
 
 def test_texture_targets_high_when_majority_noisy():
     """反过来：多数体素都粗糙时不能被误判成平的。"""
-    u8 = np.full((10, 1, 3), 200, dtype=np.uint8)
+    u8 = np.full((10, 3), 200, dtype=np.uint8)
+    u8[:, 0] = 40
     std = np.array([0.0, 35.0, 38.0, 40.0, 42.0, 36.0, 39.0, 41.0, 37.0, 40.0])
-    _, target = core_build.texture_targets_by_color(u8, std)
+    uniq, inverse = np.unique(core_build.pack_rgb_keys(u8), return_inverse=True)
+    target = core_build.texture_targets_by_color(uniq, inverse, std)
     assert target[0] > 20.0  # 25% 分位仍落在高档
 
 

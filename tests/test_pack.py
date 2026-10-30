@@ -133,18 +133,18 @@ def test_parent_chain_reaches_elements(tmp_path):
 # 整方块过滤：楼梯/台阶不能进调色板
 # --------------------------------------------------------------------------
 def test_partial_model_is_not_full_cube(tmp_path):
-    stair = [{"from": [0, 0, 8], "to": [16, 8, 16]}]
+    slab = [{"from": [0, 0, 0], "to": [16, 8, 16]}]
     jar = _make_pack(
         tmp_path / "p.zip",
-        {"minecraft:stone": {}, "minecraft:oak_stairs": {"elements": stair}},
+        {"minecraft:stone": {}, "minecraft:oak_slab": {"elements": slab}},
     )
     with pack.ResourcePack(jar) as rp:
         assert rp.is_full_cube("minecraft:block/stone_model") is True
-        assert rp.is_full_cube("minecraft:block/oak_stairs_model") is False
-        assert rp.block_color("minecraft:oak_stairs", full_cube_only=True) is None
+        assert rp.is_full_cube("minecraft:block/oak_slab_model") is False
+        assert rp.block_color("minecraft:oak_slab", full_cube_only=True) is None
 
     colors = pack.load_block_colors(jar)
-    assert "minecraft:oak_stairs" not in colors
+    assert "minecraft:oak_slab" not in colors
     assert "minecraft:stone" in colors
 
 
@@ -247,7 +247,7 @@ def test_real_jar_parses():
     assert len(colors) > 250, f"整方块数量太少：{len(colors)}"
 
     # 非整方块和功能方块不能混进来
-    for bad in ("minecraft:oak_stairs", "minecraft:stone_slab", "minecraft:oak_door",
+    for bad in ("minecraft:oak_fence", "minecraft:stone_slab", "minecraft:oak_door",
                 "minecraft:bookshelf", "minecraft:crafting_table"):
         assert bad not in colors, f"{bad} 不该出现在调色板里"
 

@@ -86,10 +86,12 @@ def test_golden_reads_into_model():
     assert m.size == (2, 2, 2)
     assert m.total_blocks == 8
     names = {s.name for s in m.palette}
-    assert "minecraft:polished_granite_stairs" in names
-    # 楼梯的属性要保留
-    stairs = [s for s in m.palette if s.name.endswith("stairs")]
-    assert stairs and all(s.props for s in stairs)
+    assert "minecraft:polished_granite" in names
+    # 真样本里有带朝向/半砖等属性的方块，属性必须完整保留（不能被丢掉）
+    with_props = [s for s in m.palette if s.props]
+    assert with_props, "样本里应当有带属性的方块"
+    assert all(len(s.props) >= 3 for s in with_props), \
+        f"属性数对不上：{[(s.name, len(s.props)) for s in with_props]}"
 
 
 def test_reencode_matches_golden_bytes(golden_root):

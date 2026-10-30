@@ -15,7 +15,7 @@ import numpy as np
 from .ir import BlockState
 
 # 会掉落的整方块。名单照 Minecraft 的重力方块集合，
-# 只留会出现在色板里的（楼梯/栅栏那些本来就进不了色板）。
+# 只留会出现在色板里的（栅栏、门那些本来就进不了色板）。
 GRAVITY_BLOCKS = {
     "minecraft:sand",
     "minecraft:red_sand",

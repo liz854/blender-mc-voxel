@@ -22,7 +22,7 @@ def test_varint_negative_rejected():
 def test_schem_roundtrip(tmp_path):
     m = VoxelModel((3, 2, 2))
     m.set(0, 0, 0, BlockState("minecraft:stone"))
-    m.set(2, 1, 1, BlockState("minecraft:oak_stairs", {"facing": "north"}))
+    m.set(2, 1, 1, BlockState("minecraft:oak_log", {"axis": "y"}))
     path = tmp_path / "x.schem"
     write_schem(m, str(path), 4325)
 
@@ -31,7 +31,7 @@ def test_schem_roundtrip(tmp_path):
     assert back.total_blocks == 2
     names = {(s.name, tuple(sorted(s.props.items()))) for s in back.palette}
     assert ("minecraft:stone", ()) in names
-    assert ("minecraft:oak_stairs", (("facing", "north"),)) in names
+    assert ("minecraft:oak_log", (("axis", "y"),)) in names
 
 
 def test_schem_has_required_fields(tmp_path):

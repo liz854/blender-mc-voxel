@@ -1,4 +1,4 @@
-"""操作符：预览体素 / 导出投影 / 反向导入。"""
+"""操作符：体素化 / 预览图 / 导出投影。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import os
 import tempfile
 
 import bpy
-from bpy_extras.io_utils import ExportHelper, ImportHelper
+from bpy_extras.io_utils import ExportHelper
 
 from ..core import build as core_build
 from ..core import limits
@@ -391,55 +391,6 @@ class MCVOXEL_OT_export(bpy.types.Operator, ExportHelper):
         return {"FINISHED"}
 
 
-class MCVOXEL_OT_import(bpy.types.Operator, ImportHelper):
-    """反向导入投影为网格"""
-
-    bl_idname = "mc_voxel.import_litematic"
-    bl_label = "导入投影"
-    bl_options = {"REGISTER", "UNDO"}
-
-    filename_ext = ".litematic"
-    filter_glob: bpy.props.StringProperty(default="*.litematic;*.schem", options={"HIDDEN"})
-
-    def execute(self, context):
-        path = bpy.path.abspath(self.filepath)
-        try:
-            if path.lower().endswith(".schem"):
-                model = core_schem.read_schem(path)
-            else:
-                model = core_litematic.read_litematic(path)
-        except Exception as exc:
-            self.report({"ERROR"}, f"读取失败：{exc}")
-            return {"CANCELLED"}
-
-        from ..core import mesh_export
-        from ..core.coords import mc_to_blender_array
-
-        verts, quads, _colors = mesh_export.model_to_mesh(model)
-        mesh = bpy.data.meshes.new("MCVoxelImport")
-        mesh.from_pydata(mc_to_blender_array(verts).tolist(), [], quads.tolist())
-        mesh.update()
-        obj = bpy.data.objects.new("MCVoxelImport", mesh)
-        context.collection.objects.link(obj)
-
-        # 方案 §12.2：平滑走 Blender 修改器，不自研 marching cubes。
-        # 两个开关分开：只改法线 vs 真磨圆。
-        props = _scene(context).mc_voxel
-        smooth = getattr(props, "smooth_shading", True)
-        remesh = getattr(props, "remesh_smooth", False)
-        if remesh:
-            mod = obj.modifiers.new("Smooth", "REMESH")
-            mod.mode = "VOXEL"
-            mod.voxel_size = props.remesh_voxel_size
-            mod.use_smooth_shade = smooth
-        elif smooth:
-            mesh.polygons.foreach_set("use_smooth", [True] * len(mesh.polygons))
-            mesh.update()
-        note = "磨圆" if remesh else ("平滑着色" if smooth else "保持硬边")
-        self.report({"INFO"}, f"导入 {model.size}，{len(quads)} 个面（{note}）")
-        return {"FINISHED"}
-
-
 _AXIS_INDEX = {"X": 0, "Y": 1, "Z": 2}
 _AXIS_NAME = {"X": "长", "Y": "高", "Z": "宽"}
 
@@ -611,7 +562,6 @@ _CLASSES = (
     MCVOXEL_OT_voxelize,
     MCVOXEL_OT_preview,
     MCVOXEL_OT_export,
-    MCVOXEL_OT_import,
     MCVOXEL_OT_preset,
     MCVOXEL_OT_fit_size,
     MCVOXEL_OT_render_preview,

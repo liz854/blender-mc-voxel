@@ -29,9 +29,9 @@ def _norm_size(size):
 
 
 def _separated(local, axis, radius):
-    """local (T,V,3,3)，axis (T,V,3)。返回 (T,V) bool：沿该轴投影后是否分离。"""
-    proj = np.einsum("tvij,tvj->tvi", local, axis)
-    return (proj.min(axis=2) > radius) | (proj.max(axis=2) < -radius)
+    """local (L,3,3)，axis (L,3)。返回 (L,) bool：沿该轴投影后是否分离。"""
+    proj = np.einsum("lij,lj->li", local, axis)
+    return (proj.min(axis=1) > radius) | (proj.max(axis=1) < -radius)
 
 
 def _separated_all(local, radius_base):
@@ -41,47 +41,68 @@ def _separated_all(local, radius_base):
     9 根「盒轴 × 三角形边」。少测那 9 根的话，三角形的一条边从体素角落
     旁边斜着掠过时所有轴都投影重叠，会被误判成"相交"——结果就是尖顶和
     斜棱附近大面积膨胀（四棱锥的顶变成三角形、棱角糊成一片）。
+
+    实现上展平成 (M,3,3) 处理，并且**每测完一根轴就把已经判定分离的
+    组合踢掉**：候选框里绝大多数 (三角形, 体素) 对在前 4 根轴上就已经
+    排除了，后面的 12 根轴只需要算剩下的那一小撮。3 根盒轴的投影就是
+    坐标分量本身，连归一化都省了。
     """
-    p0 = local[:, :, 0, :]
-    p1 = local[:, :, 1, :]
-    p2 = local[:, :, 2, :]
+    shape = local.shape[:2]
+    p = local.reshape(-1, 3, 3)
+    radius = radius_base * (1.0 + _EPS)
+
+    # ---- 阶段 1：3 根盒轴，投影 = 局部坐标分量 ----
+    separated = np.zeros(p.shape[0], dtype=bool)
+    for a in range(3):
+        proj = p[:, :, a]
+        separated |= (proj.min(axis=1) > radius) | (proj.max(axis=1) < -radius)
+
+    live = np.nonzero(~separated)[0]
+    if live.size == 0:
+        return separated.reshape(shape)
+
+    # ---- 阶段 2：法线 + 3 根边×法线 + 9 根盒轴×边 ----
+    p0 = p[:, 0, :]
+    p1 = p[:, 1, :]
+    p2 = p[:, 2, :]
     e0 = p1 - p0
     e1 = p2 - p1
     e2 = p0 - p2
     normal = np.cross(e0, e1)
-
-    shape = local[:, :, 0, :].shape
-    box_axes = [
-        np.broadcast_to(np.array([1.0, 0.0, 0.0]), shape),
-        np.broadcast_to(np.array([0.0, 1.0, 0.0]), shape),
-        np.broadcast_to(np.array([0.0, 0.0, 1.0]), shape),
-    ]
-    axes = list(box_axes) + [
+    axes = [
         normal,
         np.cross(e0, normal),
         np.cross(e1, normal),
         np.cross(e2, normal),
     ]
-    # 盒轴 × 三角形边：9 根，缺了就出上面说的"棱角糊成一片"
-    for box_axis in box_axes:
-        for edge in (e0, e1, e2):
-            axes.append(np.cross(box_axis, edge))
+    # 盒轴 × 三角形边：直接写出分量，避免再调 9 次 np.cross
+    for edge in (e0, e1, e2):
+        ex, ey, ez = edge[:, 0], edge[:, 1], edge[:, 2]
+        zero = np.zeros_like(ex)
+        axes.append(np.stack([zero, -ez, ey], axis=1))  # x̂ × e
+        axes.append(np.stack([ez, zero, -ex], axis=1))  # ŷ × e
+        axes.append(np.stack([-ey, ex, zero], axis=1))  # ẑ × e
 
-    separated = np.zeros(local.shape[:2], dtype=bool)
     for axis in axes:
-        # axis 可能是 broadcast 出来的只读视图，先取具体数组再算模长
-        ax = np.asarray(axis, dtype=np.float64)
-        norm2 = np.einsum("tvi,tvi->tv", ax, ax)
+        if live.size == 0:
+            break
+        ax = axis[live]
+        norm2 = np.einsum("ij,ij->i", ax, ax)
         valid = norm2 > 1e-20
         if not valid.any():
             continue
-        unit = ax / np.sqrt(np.where(valid, norm2, 1.0))[:, :, None]
-        # 体素方盒在任意轴上的投影半径
-        radius = radius_base * (
-            np.abs(unit[:, :, 0]) + np.abs(unit[:, :, 1]) + np.abs(unit[:, :, 2])
-        )
-        separated |= valid & _separated(local, unit, radius + _EPS * radius_base)
-    return separated
+        unit = ax / np.sqrt(np.where(valid, norm2, 1.0))[:, None]
+        # 体素方盒在这根轴上的投影半径
+        rad = radius_base * (
+            np.abs(unit[:, 0]) + np.abs(unit[:, 1]) + np.abs(unit[:, 2])
+        ) + _EPS * radius_base
+        sub = p[live]
+        sep_sub = valid & _separated(sub, unit, rad)
+        if sep_sub.any():
+            separated[live[sep_sub]] = True
+            live = live[~sep_sub]
+
+    return separated.reshape(shape)
 
 
 def voxelize_surface(verts, tris, size, origin=None, block_size=1.0, colors=None):
@@ -135,9 +156,15 @@ def voxelize_surface(verts, tris, size, origin=None, block_size=1.0, colors=None
     tri_min = P.min(axis=1)
     tri_max = P.max(axis=1)
 
-    # 三角形覆盖的体素索引区间，外扩 1 格；SAT 会再剔除多余部分
-    lo = np.floor((tri_min - origin) / block).astype(np.int64) - 1
-    hi = np.floor((tri_max - origin) / block).astype(np.int64) + 1
+    # 三角形覆盖的体素索引区间，用精确解：
+    #   体素 k 的盒是 [origin+k*block, origin+(k+1)*block]，与三角形 AABB
+    #   相交 ⟺ k >= min' − 1 且 k <= max'（min'/max' 是除以 block 后的相对坐标）。
+    #   所以下界 = ceil(min') − 1、上界 = floor(max')。
+    # 注意不能写成 floor(min')：顶点恰好落在格子边界上时（轴对齐的立方体
+    # 全是这样），min' 是整数，floor 会漏掉左侧那一圈相切的格子——实测
+    # bugtest 的沙柱会少掉三分之一体素。
+    lo = np.ceil((tri_min - origin) / block).astype(np.int64) - 1
+    hi = np.floor((tri_max - origin) / block).astype(np.int64)
     for a in range(3):
         lo[:, a] = np.clip(lo[:, a], 0, size[a] - 1)
         hi[:, a] = np.clip(hi[:, a], 0, size[a] - 1)

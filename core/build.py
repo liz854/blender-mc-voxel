@@ -22,25 +22,46 @@ def grid_from_bounds(verts, block_size: float):
     return lo, tuple(int(s) for s in size)
 
 
-def texture_targets_by_color(vox_u8, vox_std):
+def pack_rgb_keys(rgb_u8) -> np.ndarray:
+    """(n,3) uint8 颜色 -> (n,) uint32 键（r<<16 | g<<8 | b）。
+
+    用来替代 `np.unique(..., axis=0)`：三维唯一值要逐行比较/排序，
+    400 万方块时要 3 秒；压成单整数后走一维 unique，只要几十毫秒。
+    """
+    a = np.asarray(rgb_u8, dtype=np.uint32)
+    return (a[:, 0] << 16) | (a[:, 1] << 8) | a[:, 2]
+
+
+def unpack_rgb_keys(keys) -> np.ndarray:
+    """uint32 键 -> (n,3) uint8 颜色。"""
+    k = np.asarray(keys, dtype=np.uint32)
+    return np.stack(
+        [((k >> 16) & 0xFF), ((k >> 8) & 0xFF), (k & 0xFF)], axis=1
+    ).astype(np.uint8)
+
+
+def texture_targets_by_color(uniq_keys, inverse, vox_std):
     """每种颜色一个目标粗糙度 = 该颜色所有体素 std 的 25% 分位。
 
     按体素直接取会把颜色分界处的体素判成"粗糙"（邻域横跨两种颜色，
     std 被抬高），墙色分界线就会长出花纹理斑点；同色区域内边界体素
     是少数，取低分位整体判"平"。
 
-    返回 (uniq 颜色表, 每色的目标 std)。
+    uniq_keys : (K,) 唯一色键，只用来定返回长度
+    inverse   : (n,) 每个体素所属色号
+    vox_std   : (n,) 每个体素的邻域 std
+
+    返回每色的目标 std，长度 K。
     """
-    uniq, inverse = np.unique(vox_u8, axis=0, return_inverse=True)
     order = np.argsort(inverse, kind="stable")
     sorted_std = np.asarray(vox_std, dtype=np.float64)[order]
-    counts = np.bincount(inverse, minlength=len(uniq))
+    counts = np.bincount(inverse, minlength=len(uniq_keys))
     edges = np.concatenate(([0], np.cumsum(counts)))
-    target = np.empty(len(uniq), dtype=np.float64)
-    for ci in range(len(uniq)):
+    target = np.empty(len(uniq_keys), dtype=np.float64)
+    for ci in range(len(uniq_keys)):
         seg = sorted_std[edges[ci] : edges[ci + 1]]
         target[ci] = float(np.percentile(seg, 25)) if seg.size else 0.0
-    return uniq, target
+    return target
 
 
 def build_voxel_model(
@@ -116,31 +137,35 @@ def build_voxel_model(
 
     vox_u8 = np.clip(np.round(vox_rgb), 0, 255).astype(np.uint8)
 
-    # 纹理感知匹配：目标粗糙度按颜色分组取低分位（见 texture_targets_by_color），
-    # 平色块的分界线不会长斑点，渐变区域也不会比纯颜色匹配更花。
-    uniq, inverse = np.unique(vox_u8, axis=0, return_inverse=True)
-    if texture_match and getattr(palette, "luts", None) is not None:
+    # 唯一色用 uint32 键做一维 unique（见 pack_rgb_keys 的注释）。
+    uniq_keys, inverse = np.unique(pack_rgb_keys(vox_u8), return_inverse=True)
+    uniq_rgb = unpack_rgb_keys(uniq_keys).astype(np.float64)
+
+    # 匹配走精确 ΔE 而不是 32³ LUT：唯一色通常只有几十到几百个，
+    # 精确算一遍是毫秒级，却完全消除了 LUT 把查询色吸附到格子中心
+    # 带来的选色偏差（两个同色方块在 LUT 里可能投给第三个方块）。
+    if texture_match and getattr(palette, "has_texture_info", False):
         vox_std = neighborhood_std(xs, ys, zs, rgb, size)
-        uniq, target_std = texture_targets_by_color(vox_u8, vox_std)
+        target_std = texture_targets_by_color(uniq_keys, inverse, vox_std)
         bin_centers = np.asarray(TEXTURE_BIN_CENTERS)[
             [texture_bin(s) for s in target_std]
         ]
-        matched = palette.nearest_batch(uniq.astype(np.float64), stds=bin_centers)
+        matched = palette.nearest_batch(uniq_rgb, stds=bin_centers, exact=True)
     else:
-        matched = palette.nearest_batch(uniq.astype(np.float64))
+        matched = palette.nearest_batch(uniq_rgb, exact=True)
 
-    name_cache = {
-        tuple(int(v) for v in row): name for row, name in zip(uniq, matched)
-    }
-
-    key_idx = {}
-    out = np.zeros(hit.size, dtype=np.int64)
-    for local_i, inv in enumerate(inverse):
-        rgb_key = tuple(int(v) for v in uniq[inv])
-        name = name_cache[rgb_key]
-        if name not in key_idx:
-            key_idx[name] = model.add_state(BlockState(name))
-        out[local_i] = key_idx[name]
+    # 每个唯一色一个调色板下标，再靠 inverse 一次散射到全部体素。
+    # 老写法逐体素做 Python 循环（400 万方块 = 400 万次字典查找 + tuple
+    # 构造，实测 1.5-3 秒），是整条流水线里最大的一笔白开销。
+    state_index = {}
+    per_color = np.empty(len(uniq_keys), dtype=np.int64)
+    for i, name in enumerate(matched):
+        idx = state_index.get(name)
+        if idx is None:
+            idx = model.add_state(BlockState(name))
+            state_index[name] = idx
+        per_color[i] = idx
+    out = per_color[inverse]
 
     model.blocks[hit] = out
 

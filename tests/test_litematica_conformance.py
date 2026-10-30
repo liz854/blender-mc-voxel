@@ -147,9 +147,9 @@ def test_palette_zero_is_air_and_unique():
 
 def test_properties_written_as_string_compound():
     m = VoxelModel((1, 1, 1))
-    m.set(0, 0, 0, BlockState("minecraft:oak_stairs", {"facing": "north", "half": "bottom"}))
+    m.set(0, 0, 0, BlockState("minecraft:oak_door", {"facing": "north", "half": "lower"}))
     tree = build_litematic_tree(m, mc_data_version=DV)
-    entry = [e for e in tree["Regions"]["Region0"]["BlockStatePalette"] if e["Name"].endswith("stairs")][0]
+    entry = [e for e in tree["Regions"]["Region0"]["BlockStatePalette"] if e["Name"] == "minecraft:oak_door"][0]
     props = entry["Properties"]
-    assert props["facing"] == "north" and props["half"] == "bottom"
+    assert props["facing"] == "north" and props["half"] == "lower"
     assert all(isinstance(v, nbt.TAGString) for v in props.values())

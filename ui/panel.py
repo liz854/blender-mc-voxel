@@ -141,20 +141,10 @@ class MCVOXEL_PT_panel(bpy.types.Panel):
         box.prop(props, "preview_size")
         box.operator("mc_voxel.render_preview", icon="RENDER_STILL")
 
-        box = layout.box()
-        box.label(text="反向导入后", icon="IMPORT")
-        box.prop(props, "smooth_shading")
-        box.prop(props, "remesh_smooth")
-        if props.remesh_smooth:
-            box.prop(props, "remesh_voxel_size")
-            if props.smooth_shading:
-                box.label(text="磨圆会丢锐利边缘和颜色细节", icon="ERROR")
-
         row = layout.row(align=True)
         row.operator("mc_voxel.voxelize", icon="MOD_BUILD")
         row.operator("mc_voxel.preview", icon="RESTRICT_VIEW_OFF")
         layout.operator("mc_voxel.export", icon="FILE_TICK")
-        layout.operator("mc_voxel.import_litematic", icon="IMPORT")
 
 
 class MCVOXEL_MT_menu(bpy.types.Menu):
@@ -172,7 +162,6 @@ class MCVOXEL_MT_menu(bpy.types.Menu):
         layout.operator("mc_voxel.render_preview", icon="RENDER_STILL")
         layout.separator()
         layout.operator("mc_voxel.export", icon="FILE_TICK")
-        layout.operator("mc_voxel.import_litematic", icon="IMPORT")
 
 
 def _menu_entry(self, context):
@@ -198,7 +187,6 @@ class MCVOXEL_MT_view3d_menu(bpy.types.Menu):
         layout.operator("mc_voxel.render_preview", icon="RENDER_STILL")
         layout.separator()
         layout.operator("mc_voxel.export", icon="FILE_TICK")
-        layout.operator("mc_voxel.import_litematic", icon="IMPORT")
 
 
 def _view3d_menu_entry(self, context):
